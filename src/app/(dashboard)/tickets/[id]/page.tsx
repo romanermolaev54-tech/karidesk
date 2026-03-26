@@ -1,0 +1,674 @@
+'use client'
+
+import { useState, useEffect, useCallback } from 'react'
+import { useParams, useRouter } from 'next/navigation'
+import { useAuth } from '@/hooks/useAuth'
+import { createClient } from '@/lib/supabase/client'
+import { Button } from '@/components/ui/Button'
+import { Badge } from '@/components/ui/Badge'
+import { Textarea } from '@/components/ui/Textarea'
+import { Select } from '@/components/ui/Select'
+import { Modal } from '@/components/ui/Modal'
+import { formatDate, formatRelative, formatTicketNumber, formatPhone } from '@/lib/utils'
+import { TICKET_STATUSES, TICKET_PRIORITIES } from '@/lib/constants'
+import type { Ticket, TicketMessage, TicketPhoto, TicketHistory, TicketStatus, Profile } from '@/types/database'
+import {
+  ArrowLeft,
+  Phone,
+  Clock,
+  User,
+  UserCheck,
+  Camera,
+  Send,
+  CheckCircle,
+  XCircle,
+  AlertTriangle,
+  Building2,
+  MessageCircle,
+  History,
+  Image,
+  X,
+  Upload,
+  Loader2,
+} from 'lucide-react'
+
+export default function TicketDetailPage() {
+  const params = useParams()
+  const router = useRouter()
+  const { user, isAdmin, isDirector } = useAuth()
+  const supabase = createClient()
+  const ticketId = params.id as string
+
+  const [ticket, setTicket] = useState<Ticket | null>(null)
+  const [messages, setMessages] = useState<TicketMessage[]>([])
+  const [photos, setPhotos] = useState<TicketPhoto[]>([])
+  const [history, setHistory] = useState<TicketHistory[]>([])
+  const [contractors, setContractors] = useState<Profile[]>([])
+  const [loading, setLoading] = useState(true)
+  const [activeTab, setActiveTab] = useState<'info' | 'messages' | 'photos' | 'history'>('info')
+
+  // Action states
+  const [newMessage, setNewMessage] = useState('')
+  const [sendingMessage, setSendingMessage] = useState(false)
+  const [showAssignModal, setShowAssignModal] = useState(false)
+  const [selectedContractor, setSelectedContractor] = useState('')
+  const [assigning, setAssigning] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [showRejectModal, setShowRejectModal] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+
+  const loadTicket = useCallback(async () => {
+    const { data } = await supabase
+      .from('tickets')
+      .select(`
+        *,
+        store:stores(*, division:divisions(*)),
+        category:ticket_categories(*),
+        division:divisions(*),
+        creator:profiles!tickets_created_by_fkey(*),
+        assignee:profiles!tickets_assigned_to_fkey(*)
+      `)
+      .eq('id', ticketId)
+      .single()
+
+    if (data) setTicket(data)
+    setLoading(false)
+  }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadMessages = useCallback(async () => {
+    const { data } = await supabase
+      .from('ticket_messages')
+      .select('*, sender:profiles!ticket_messages_sender_id_fkey(*)')
+      .eq('ticket_id', ticketId)
+      .order('created_at', { ascending: true })
+    if (data) setMessages(data)
+  }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadPhotos = useCallback(async () => {
+    const { data } = await supabase
+      .from('ticket_photos')
+      .select('*')
+      .eq('ticket_id', ticketId)
+      .order('created_at')
+    if (data) setPhotos(data)
+  }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const loadHistory = useCallback(async () => {
+    const { data } = await supabase
+      .from('ticket_history')
+      .select('*, actor:profiles!ticket_history_actor_id_fkey(id, full_name)')
+      .eq('ticket_id', ticketId)
+      .order('created_at', { ascending: false })
+    if (data) setHistory(data)
+  }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    loadTicket()
+    loadMessages()
+    loadPhotos()
+    loadHistory()
+  }, [loadTicket, loadMessages, loadPhotos, loadHistory])
+
+  // Load contractors for assignment
+  useEffect(() => {
+    if (isAdmin) {
+      supabase
+        .from('profiles')
+        .select('*')
+        .eq('role', 'contractor')
+        .eq('is_active', true)
+        .then(({ data }) => {
+          if (data) setContractors(data)
+        })
+    }
+  }, [isAdmin]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const sendMessage = async () => {
+    if (!newMessage.trim() || !user) return
+    setSendingMessage(true)
+    await supabase.from('ticket_messages').insert({
+      ticket_id: ticketId,
+      sender_id: user.id,
+      message: newMessage.trim(),
+      message_type: 'comment',
+    })
+    setNewMessage('')
+    setSendingMessage(false)
+    loadMessages()
+  }
+
+  const assignTicket = async () => {
+    if (!selectedContractor || !user) return
+    setAssigning(true)
+    await supabase
+      .from('tickets')
+      .update({
+        assigned_to: selectedContractor,
+        assigned_by: user.id,
+        assigned_at: new Date().toISOString(),
+        status: 'assigned',
+      })
+      .eq('id', ticketId)
+
+    await supabase.from('ticket_history').insert({
+      ticket_id: ticketId,
+      action: 'assigned',
+      old_value: ticket?.status,
+      new_value: 'assigned',
+      actor_id: user.id,
+      details: { assigned_to: selectedContractor },
+    })
+
+    setAssigning(false)
+    setShowAssignModal(false)
+    loadTicket()
+    loadHistory()
+  }
+
+  const updateStatus = async (newStatus: TicketStatus) => {
+    if (!user) return
+    const updates: Record<string, unknown> = { status: newStatus }
+    if (newStatus === 'completed') updates.completed_at = new Date().toISOString()
+    if (newStatus === 'verified') {
+      updates.verified_at = new Date().toISOString()
+      updates.verified_by = user.id
+    }
+
+    await supabase.from('tickets').update(updates).eq('id', ticketId)
+    await supabase.from('ticket_history').insert({
+      ticket_id: ticketId,
+      action: 'status_changed',
+      old_value: ticket?.status,
+      new_value: newStatus,
+      actor_id: user.id,
+    })
+    loadTicket()
+    loadHistory()
+  }
+
+  const rejectTicket = async () => {
+    if (!user) return
+    await supabase
+      .from('tickets')
+      .update({ status: 'rejected', rejection_reason: rejectReason })
+      .eq('id', ticketId)
+
+    await supabase.from('ticket_history').insert({
+      ticket_id: ticketId,
+      action: 'rejected',
+      old_value: ticket?.status,
+      new_value: 'rejected',
+      actor_id: user.id,
+      details: { reason: rejectReason },
+    })
+
+    setShowRejectModal(false)
+    loadTicket()
+    loadHistory()
+  }
+
+  const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, photoType: 'completion' | 'act') => {
+    const file = e.target.files?.[0]
+    if (!file || !user) return
+    setUploading(true)
+
+    const ext = file.name.split('.').pop()
+    const path = `${ticketId}/${crypto.randomUUID()}.${ext}`
+    const { error } = await supabase.storage.from('ticket-photos').upload(path, file)
+
+    if (!error) {
+      const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
+      await supabase.from('ticket_photos').insert({
+        ticket_id: ticketId,
+        storage_path: path,
+        file_url: urlData.publicUrl,
+        photo_type: photoType,
+        uploaded_by: user.id,
+        file_size: file.size,
+        mime_type: file.type,
+      })
+      loadPhotos()
+    }
+
+    setUploading(false)
+    e.target.value = ''
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-20">
+        <Loader2 className="w-8 h-8 text-accent animate-spin" />
+      </div>
+    )
+  }
+
+  if (!ticket) {
+    return (
+      <div className="text-center py-20">
+        <p className="text-body text-text-secondary">Заявка не найдена</p>
+        <Button variant="outline" size="sm" className="mt-4" onClick={() => router.back()}>
+          <ArrowLeft className="w-4 h-4" />
+          Назад
+        </Button>
+      </div>
+    )
+  }
+
+  const statusInfo = TICKET_STATUSES[ticket.status]
+  const priorityInfo = TICKET_PRIORITIES[ticket.priority]
+  const isAssignee = user?.id === ticket.assigned_to
+  const canManage = isAdmin || isDirector
+
+  return (
+    <div className="max-w-3xl mx-auto space-y-4 animate-fade-in">
+      {/* Header */}
+      <div className="flex items-start gap-3">
+        <button
+          onClick={() => router.back()}
+          className="p-2 rounded-xl text-text-tertiary hover:text-text-primary hover:bg-surface-elevated/40 transition-colors mt-0.5"
+        >
+          <ArrowLeft className="w-5 h-5" />
+        </button>
+        <div className="flex-1">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h1 className="text-heading-2 text-text-primary">
+              {formatTicketNumber(ticket.ticket_number)}
+            </h1>
+            <Badge
+              variant={statusInfo.color as 'info' | 'warning' | 'success' | 'danger' | 'accent'}
+              size="md"
+              dot
+            >
+              {statusInfo.label}
+            </Badge>
+            {ticket.priority !== 'normal' && (
+              <Badge variant={priorityInfo.color as 'warning' | 'danger'} size="md">
+                {priorityInfo.label}
+              </Badge>
+            )}
+          </div>
+          <p className="text-body-sm text-text-tertiary mt-1">
+            {ticket.category?.name} — {formatDate(ticket.created_at)}
+          </p>
+        </div>
+      </div>
+
+      {/* Action buttons */}
+      {canManage && ticket.status === 'new' && (
+        <div className="flex gap-2">
+          <Button onClick={() => setShowAssignModal(true)} className="flex-1">
+            <UserCheck className="w-4 h-4" />
+            Назначить
+          </Button>
+          <Button variant="danger" onClick={() => setShowRejectModal(true)}>
+            <XCircle className="w-4 h-4" />
+          </Button>
+        </div>
+      )}
+
+      {canManage && ticket.status === 'completed' && (
+        <div className="flex gap-2">
+          <Button onClick={() => updateStatus('verified')} className="flex-1">
+            <CheckCircle className="w-4 h-4" />
+            Подтвердить
+          </Button>
+          <Button variant="danger" onClick={() => setShowRejectModal(true)}>
+            <XCircle className="w-4 h-4" />
+            Отклонить
+          </Button>
+        </div>
+      )}
+
+      {isAssignee && (ticket.status === 'assigned' || ticket.status === 'in_progress') && (
+        <div className="flex gap-2">
+          {ticket.status === 'assigned' && (
+            <Button onClick={() => updateStatus('in_progress')} className="flex-1">
+              Взять в работу
+            </Button>
+          )}
+          {ticket.status === 'in_progress' && (
+            <Button onClick={() => updateStatus('completed')} className="flex-1">
+              <CheckCircle className="w-4 h-4" />
+              Завершить
+            </Button>
+          )}
+          <label className="cursor-pointer">
+            <Button variant="secondary" onClick={() => {}}>
+              <Camera className="w-4 h-4" />
+              Фото
+            </Button>
+            <input
+              type="file"
+              accept="image/*"
+              className="hidden"
+              capture="environment"
+              onChange={e => handlePhotoUpload(e, 'completion')}
+            />
+          </label>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex gap-1 p-1 rounded-xl bg-surface-elevated/30 border border-border">
+        {[
+          { id: 'info' as const, label: 'Информация', icon: Building2 },
+          { id: 'messages' as const, label: 'Чат', icon: MessageCircle, count: messages.length },
+          { id: 'photos' as const, label: 'Фото', icon: Image, count: photos.length },
+          { id: 'history' as const, label: 'История', icon: History },
+        ].map(tab => (
+          <button
+            key={tab.id}
+            onClick={() => setActiveTab(tab.id)}
+            className={`flex-1 flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-caption font-medium transition-all ${
+              activeTab === tab.id
+                ? 'gradient-accent text-white shadow-sm'
+                : 'text-text-tertiary hover:text-text-secondary'
+            }`}
+          >
+            <tab.icon className="w-3.5 h-3.5" />
+            <span className="hidden sm:inline">{tab.label}</span>
+            {tab.count !== undefined && tab.count > 0 && (
+              <span className={`text-micro px-1.5 py-0.5 rounded-full ${
+                activeTab === tab.id ? 'bg-white/20' : 'bg-surface-elevated/60'
+              }`}>
+                {tab.count}
+              </span>
+            )}
+          </button>
+        ))}
+      </div>
+
+      {/* Info tab */}
+      {activeTab === 'info' && (
+        <div className="card-premium p-5 space-y-4 animate-fade-in">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <p className="text-caption text-text-tertiary mb-1">Магазин</p>
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-text-tertiary" />
+                <span className="text-body-sm text-text-primary">
+                  #{ticket.store?.store_number} {ticket.store?.name}
+                </span>
+              </div>
+              {ticket.store?.city && (
+                <p className="text-caption text-text-tertiary mt-0.5 ml-6">
+                  {ticket.store.city}{ticket.store.address ? `, ${ticket.store.address}` : ''}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <p className="text-caption text-text-tertiary mb-1">Подразделение</p>
+              <p className="text-body-sm text-text-primary">{ticket.division?.name}</p>
+            </div>
+
+            <div>
+              <p className="text-caption text-text-tertiary mb-1">Создал</p>
+              <div className="flex items-center gap-2">
+                <User className="w-4 h-4 text-text-tertiary" />
+                <span className="text-body-sm text-text-primary">{ticket.creator?.full_name}</span>
+              </div>
+            </div>
+
+            <div>
+              <p className="text-caption text-text-tertiary mb-1">Контактный телефон</p>
+              <div className="flex items-center gap-2">
+                <Phone className="w-4 h-4 text-text-tertiary" />
+                <a href={`tel:${ticket.contact_phone}`} className="text-body-sm text-accent hover:underline">
+                  {formatPhone(ticket.contact_phone)}
+                </a>
+              </div>
+            </div>
+
+            {ticket.assignee && (
+              <div>
+                <p className="text-caption text-text-tertiary mb-1">Исполнитель</p>
+                <div className="flex items-center gap-2">
+                  <UserCheck className="w-4 h-4 text-text-tertiary" />
+                  <span className="text-body-sm text-text-primary">{ticket.assignee.full_name}</span>
+                </div>
+              </div>
+            )}
+
+            {ticket.deadline && (
+              <div>
+                <p className="text-caption text-text-tertiary mb-1">Дедлайн</p>
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4 text-text-tertiary" />
+                  <span className="text-body-sm text-text-primary">{formatDate(ticket.deadline)}</span>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="border-t border-border pt-4">
+            <p className="text-caption text-text-tertiary mb-2">Описание</p>
+            <p className="text-body-sm text-text-primary whitespace-pre-wrap">{ticket.description}</p>
+          </div>
+
+          {ticket.rejection_reason && (
+            <div className="border-t border-border pt-4">
+              <div className="flex items-center gap-2 mb-2">
+                <AlertTriangle className="w-4 h-4 text-red-400" />
+                <p className="text-caption text-red-400 font-medium">Причина отклонения</p>
+              </div>
+              <p className="text-body-sm text-text-primary">{ticket.rejection_reason}</p>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Messages tab */}
+      {activeTab === 'messages' && (
+        <div className="space-y-3 animate-fade-in">
+          <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+            {messages.length === 0 ? (
+              <div className="card-premium p-6 text-center">
+                <MessageCircle className="w-8 h-8 mx-auto mb-2 text-text-tertiary opacity-40" />
+                <p className="text-body-sm text-text-tertiary">Нет сообщений</p>
+              </div>
+            ) : (
+              messages.map(msg => {
+                const isOwn = msg.sender_id === user?.id
+                return (
+                  <div
+                    key={msg.id}
+                    className={`flex ${isOwn ? 'justify-end' : 'justify-start'}`}
+                  >
+                    <div className={`max-w-[80%] p-3 rounded-2xl ${
+                      isOwn
+                        ? 'bg-accent/10 border border-accent/20 rounded-br-md'
+                        : 'card-premium rounded-bl-md'
+                    }`}>
+                      {!isOwn && (
+                        <p className="text-caption font-medium text-accent mb-1">
+                          {msg.sender?.full_name}
+                        </p>
+                      )}
+                      <p className="text-body-sm text-text-primary">{msg.message}</p>
+                      <p className="text-micro text-text-tertiary mt-1">
+                        {formatRelative(msg.created_at)}
+                      </p>
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* Message input */}
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="Написать сообщение..."
+              value={newMessage}
+              onChange={e => setNewMessage(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && !e.shiftKey && sendMessage()}
+              className="flex-1 px-4 py-2.5 rounded-xl border border-border bg-surface-muted/30 text-text-primary placeholder:text-text-tertiary text-body-sm focus:outline-none focus:ring-2 focus:ring-accent/15 focus:border-accent/40 transition-all"
+            />
+            <Button
+              onClick={sendMessage}
+              loading={sendingMessage}
+              disabled={!newMessage.trim()}
+            >
+              <Send className="w-4 h-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Photos tab */}
+      {activeTab === 'photos' && (
+        <div className="space-y-4 animate-fade-in">
+          {['problem', 'completion', 'act'].map(type => {
+            const typePhotos = photos.filter(p => p.photo_type === type)
+            if (typePhotos.length === 0 && type !== 'problem') return null
+            const typeLabels: Record<string, string> = {
+              problem: 'Фото проблемы',
+              completion: 'Фото выполнения',
+              act: 'Акты',
+            }
+            return (
+              <div key={type}>
+                <h3 className="text-body-sm font-medium text-text-secondary mb-2">{typeLabels[type]}</h3>
+                <div className="grid grid-cols-3 gap-2">
+                  {typePhotos.map(photo => (
+                    <button
+                      key={photo.id}
+                      onClick={() => setPhotoPreview(photo.file_url)}
+                      className="aspect-square rounded-xl overflow-hidden border border-border hover:border-accent/40 transition-colors"
+                    >
+                      <img
+                        src={photo.file_url || ''}
+                        alt=""
+                        className="w-full h-full object-cover"
+                      />
+                    </button>
+                  ))}
+                  {typePhotos.length === 0 && (
+                    <div className="aspect-square rounded-xl border-2 border-dashed border-border flex items-center justify-center">
+                      <Camera className="w-6 h-6 text-text-tertiary opacity-40" />
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+
+          {/* Upload buttons for assignee */}
+          {isAssignee && ['in_progress', 'assigned'].includes(ticket.status) && (
+            <div className="flex gap-2">
+              <label className="flex-1 cursor-pointer">
+                <div className="card-interactive p-3 text-center">
+                  {uploading ? <Loader2 className="w-4 h-4 mx-auto mb-1 text-text-tertiary animate-spin" /> : <Upload className="w-4 h-4 mx-auto mb-1 text-text-tertiary" />}
+                  <p className="text-caption text-text-tertiary">Фото выполнения</p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  capture="environment"
+                  onChange={e => handlePhotoUpload(e, 'completion')}
+                />
+              </label>
+              <label className="flex-1 cursor-pointer">
+                <div className="card-interactive p-3 text-center">
+                  <Upload className="w-4 h-4 mx-auto mb-1 text-text-tertiary" />
+                  <p className="text-caption text-text-tertiary">Акт работ</p>
+                </div>
+                <input
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={e => handlePhotoUpload(e, 'act')}
+                />
+              </label>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* History tab */}
+      {activeTab === 'history' && (
+        <div className="space-y-2 animate-fade-in">
+          {history.length === 0 ? (
+            <div className="card-premium p-6 text-center">
+              <History className="w-8 h-8 mx-auto mb-2 text-text-tertiary opacity-40" />
+              <p className="text-body-sm text-text-tertiary">Нет записей</p>
+            </div>
+          ) : (
+            history.map(entry => (
+              <div key={entry.id} className="card-premium p-3 flex items-start gap-3">
+                <div className="w-2 h-2 rounded-full bg-accent/40 mt-2 flex-shrink-0" />
+                <div className="flex-1">
+                  <p className="text-body-sm text-text-primary">
+                    {entry.action === 'created' && 'Заявка создана'}
+                    {entry.action === 'assigned' && 'Назначен исполнитель'}
+                    {entry.action === 'status_changed' && `Статус: ${TICKET_STATUSES[entry.new_value as TicketStatus]?.label || entry.new_value}`}
+                    {entry.action === 'rejected' && 'Заявка отклонена'}
+                  </p>
+                  <p className="text-caption text-text-tertiary">
+                    {entry.actor?.full_name} — {formatRelative(entry.created_at)}
+                  </p>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+
+      {/* Photo preview modal */}
+      {photoPreview && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4" onClick={() => setPhotoPreview(null)}>
+          <button className="absolute top-4 right-4 p-2 text-white/80 hover:text-white" onClick={() => setPhotoPreview(null)}>
+            <X className="w-6 h-6" />
+          </button>
+          <img src={photoPreview} alt="" className="max-w-full max-h-full object-contain rounded-xl" />
+        </div>
+      )}
+
+      {/* Assign modal */}
+      <Modal isOpen={showAssignModal} onClose={() => setShowAssignModal(false)} title="Назначить исполнителя">
+        <div className="space-y-4">
+          <Select
+            label="Подрядчик"
+            placeholder="Выберите подрядчика..."
+            value={selectedContractor}
+            onChange={e => setSelectedContractor(e.target.value)}
+            options={contractors.map(c => ({ value: c.id, label: c.full_name }))}
+          />
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowAssignModal(false)} className="flex-1">
+              Отмена
+            </Button>
+            <Button onClick={assignTicket} loading={assigning} disabled={!selectedContractor} className="flex-1">
+              Назначить
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reject modal */}
+      <Modal isOpen={showRejectModal} onClose={() => setShowRejectModal(false)} title="Отклонить заявку">
+        <div className="space-y-4">
+          <Textarea
+            label="Причина отклонения"
+            placeholder="Укажите причину..."
+            value={rejectReason}
+            onChange={e => setRejectReason(e.target.value)}
+            rows={3}
+          />
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowRejectModal(false)} className="flex-1">
+              Отмена
+            </Button>
+            <Button variant="danger" onClick={rejectTicket} disabled={!rejectReason.trim()} className="flex-1">
+              Отклонить
+            </Button>
+          </div>
+        </div>
+      </Modal>
+    </div>
+  )
+}
