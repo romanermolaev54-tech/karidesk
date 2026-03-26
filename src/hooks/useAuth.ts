@@ -23,40 +23,68 @@ export function useAuth(): AuthState {
 
   useEffect(() => {
     const supabase = createClient()
+    let mounted = true
+
+    async function loadProfile(userId: string) {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', userId)
+        .single()
+      if (mounted) setProfile(data)
+    }
 
     async function getUser() {
-      const { data: { user } } = await supabase.auth.getUser()
-      setUser(user)
+      try {
+        // Use getSession with timeout to avoid lock issues
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise((_, reject) =>
+          setTimeout(() => reject(new Error('Auth timeout')), 5000)
+        )
 
-      if (user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', user.id)
-          .single()
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as Awaited<ReturnType<typeof supabase.auth.getSession>>
+        const currentUser = session?.user ?? null
 
-        setProfile(profile)
+        if (mounted) {
+          setUser(currentUser)
+          if (currentUser) {
+            await loadProfile(currentUser.id)
+          }
+        }
+      } catch (e) {
+        console.warn('Auth session check failed, trying getUser:', e)
+        try {
+          const { data: { user: fallbackUser } } = await supabase.auth.getUser()
+          if (mounted) {
+            setUser(fallbackUser)
+            if (fallbackUser) {
+              await loadProfile(fallbackUser.id)
+            }
+          }
+        } catch {
+          // No session available
+          if (mounted) setUser(null)
+        }
       }
-      setLoading(false)
+      if (mounted) setLoading(false)
     }
 
     getUser()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      if (!mounted) return
       setUser(session?.user ?? null)
       if (session?.user) {
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', session.user.id)
-          .single()
-        setProfile(profile)
+        await loadProfile(session.user.id)
       } else {
         setProfile(null)
       }
     })
 
-    return () => subscription.unsubscribe()
+    return () => {
+      mounted = false
+      subscription.unsubscribe()
+    }
   }, [])
 
   const role = profile?.role as UserRole | null
