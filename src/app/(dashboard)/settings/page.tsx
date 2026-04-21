@@ -13,7 +13,9 @@ import {
   Shield,
   LogOut,
   Save,
+  KeyRound,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
   const { user, profile, role } = useAuth()
@@ -24,6 +26,9 @@ export default function SettingsPage() {
   const [phone, setPhone] = useState(profile?.phone || '')
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  const [newPassword, setNewPassword] = useState('')
+  const [confirmPassword, setConfirmPassword] = useState('')
+  const [changingPassword, setChangingPassword] = useState(false)
 
   const handleSave = async () => {
     if (!user) return
@@ -40,6 +45,27 @@ export default function SettingsPage() {
   const handleLogout = async () => {
     await supabase.auth.signOut()
     router.push('/login')
+  }
+
+  const handlePasswordChange = async () => {
+    if (newPassword.length < 4) {
+      toast.error('Пароль должен содержать минимум 4 символа')
+      return
+    }
+    if (newPassword !== confirmPassword) {
+      toast.error('Пароли не совпадают')
+      return
+    }
+    setChangingPassword(true)
+    const { error } = await supabase.auth.updateUser({ password: newPassword })
+    setChangingPassword(false)
+    if (error) {
+      toast.error(error.message)
+      return
+    }
+    setNewPassword('')
+    setConfirmPassword('')
+    toast.success('Пароль изменён')
   }
 
   return (
@@ -86,6 +112,33 @@ export default function SettingsPage() {
         <Button onClick={handleSave} loading={saving} className="w-full">
           <Save className="w-4 h-4" />
           {saved ? 'Сохранено!' : 'Сохранить'}
+        </Button>
+      </div>
+
+      {/* Password change */}
+      <div className="card-premium p-5 space-y-4">
+        <h2 className="text-heading-3 text-text-primary flex items-center gap-2">
+          <KeyRound className="w-5 h-5 text-text-tertiary" />
+          Сменить пароль
+        </h2>
+        <Input
+          label="Новый пароль"
+          type="password"
+          value={newPassword}
+          onChange={e => setNewPassword(e.target.value)}
+          placeholder="Минимум 4 символа"
+          autoComplete="new-password"
+        />
+        <Input
+          label="Повторите новый пароль"
+          type="password"
+          value={confirmPassword}
+          onChange={e => setConfirmPassword(e.target.value)}
+          autoComplete="new-password"
+        />
+        <Button onClick={handlePasswordChange} loading={changingPassword} className="w-full" disabled={!newPassword || !confirmPassword}>
+          <KeyRound className="w-4 h-4" />
+          Изменить пароль
         </Button>
       </div>
 

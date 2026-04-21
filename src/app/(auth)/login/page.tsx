@@ -10,7 +10,7 @@ import Link from 'next/link'
 import toast from 'react-hot-toast'
 
 export default function LoginPage() {
-  const [phone, setPhone] = useState('')
+  const [identifier, setIdentifier] = useState('')
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const router = useRouter()
@@ -21,15 +21,19 @@ export default function LoginPage() {
 
     const supabase = createClient()
 
-    // Convert phone to email format for auth
-    let digits = phone.replace(/\D/g, '')
-    // Normalize: 8xxx -> 7xxx, 10 digits -> prepend 7
-    if (digits.length === 11 && digits.startsWith('8')) {
-      digits = '7' + digits.slice(1)
-    } else if (digits.length === 10) {
-      digits = '7' + digits
+    const trimmed = identifier.trim().toLowerCase()
+    let email: string
+    if (trimmed.includes('@')) {
+      email = trimmed
+    } else {
+      let digits = trimmed.replace(/\D/g, '')
+      if (digits.length === 11 && digits.startsWith('8')) {
+        digits = '7' + digits.slice(1)
+      } else if (digits.length === 10) {
+        digits = '7' + digits
+      }
+      email = `${digits}@karidesk.ru`
     }
-    const email = `${digits}@karidesk.ru`
 
     const { error } = await supabase.auth.signInWithPassword({
       email,
@@ -37,7 +41,7 @@ export default function LoginPage() {
     })
 
     if (error) {
-      toast.error('Неверный номер телефона или пароль')
+      toast.error('Неверный логин или пароль')
       setLoading(false)
       return
     }
@@ -61,12 +65,13 @@ export default function LoginPage() {
 
         <form onSubmit={handleLogin} className="card-premium p-6 space-y-5">
           <Input
-            label="Номер телефона"
-            type="tel"
-            placeholder="+7 (___) ___-__-__"
-            value={phone}
-            onChange={(e) => setPhone(e.target.value)}
+            label="Телефон или email"
+            type="text"
+            placeholder="+7 999 123-45-67 или name@kari.com"
+            value={identifier}
+            onChange={(e) => setIdentifier(e.target.value)}
             required
+            autoComplete="username"
           />
           <Input
             label="Пароль"
