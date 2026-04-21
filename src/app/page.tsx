@@ -1,11 +1,34 @@
 'use client'
 
+import { useEffect, useState } from 'react'
+import { createClient } from '@/lib/supabase/client'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowRight, Shield, Zap, BarChart3, Smartphone } from 'lucide-react'
 import { Button } from '@/components/ui/Button'
 
 export default function LandingPage() {
+  const [checking, setChecking] = useState(true)
+
+  useEffect(() => {
+    const supabase = createClient()
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session?.user) {
+        window.location.href = '/dashboard'
+      } else {
+        setChecking(false)
+      }
+    }).catch(() => setChecking(false))
+  }, [])
+
+  if (checking) {
+    return (
+      <div className="min-h-screen bg-surface flex items-center justify-center">
+        <div className="w-10 h-10 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
+      </div>
+    )
+  }
+
   return (
     <div className="min-h-screen bg-surface relative overflow-hidden">
       {/* Background blobs */}
@@ -46,15 +69,15 @@ export default function LandingPage() {
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Link href="/register">
+            <Link href="/login">
               <Button size="lg" className="w-full sm:w-auto">
                 Начать работу
                 <ArrowRight className="w-5 h-5" />
               </Button>
             </Link>
-            <Link href="/login">
+            <Link href="/register">
               <Button variant="secondary" size="lg" className="w-full sm:w-auto">
-                Уже есть аккаунт
+                Регистрация
               </Button>
             </Link>
           </div>
