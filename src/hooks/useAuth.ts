@@ -25,18 +25,30 @@ export function useAuth(): AuthState {
     const supabase = createClient()
     let mounted = true
 
+    const hardTimeout = setTimeout(() => {
+      if (mounted) setLoading(false)
+    }, 5000)
+
     async function loadProfile(userId: string) {
-      const { data } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .single()
-      if (mounted && data) setProfile(data)
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('*')
+          .eq('id', userId)
+          .single()
+        if (mounted && data) setProfile(data)
+      } catch {
+        // ignore — profile load is non-blocking for UI unblock
+      }
     }
 
     async function init() {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        const sessionPromise = supabase.auth.getSession()
+        const timeoutPromise = new Promise<{ data: { session: null } }>(resolve =>
+          setTimeout(() => resolve({ data: { session: null } }), 4000)
+        )
+        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise])
         if (!mounted) return
 
         if (session?.user) {
@@ -66,10 +78,12 @@ export function useAuth(): AuthState {
       } else {
         setProfile(null)
       }
+      if (mounted) setLoading(false)
     })
 
     return () => {
       mounted = false
+      clearTimeout(hardTimeout)
       subscription.unsubscribe()
     }
   }, [])
