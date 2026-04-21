@@ -35,7 +35,7 @@ export default function LoginPage() {
       email = `${digits}@karidesk.ru`
     }
 
-    const { error } = await supabase.auth.signInWithPassword({
+    const { data, error } = await supabase.auth.signInWithPassword({
       email,
       password,
     })
@@ -44,6 +44,21 @@ export default function LoginPage() {
       toast.error('Неверный логин или пароль')
       setLoading(false)
       return
+    }
+
+    // Check if the profile is activated (not pending moderation / not blocked)
+    if (data.user) {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('is_active')
+        .eq('id', data.user.id)
+        .single()
+      if (profile && profile.is_active === false) {
+        await supabase.auth.signOut()
+        toast.error('Ваш аккаунт ожидает одобрения или заблокирован. Обратитесь к ДП или администратору.', { duration: 7000 })
+        setLoading(false)
+        return
+      }
     }
 
     toast.success('Добро пожаловать!')
