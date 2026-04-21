@@ -15,8 +15,12 @@ import {
   Save,
   KeyRound,
   Gavel,
+  Bell,
+  BellOff,
+  Smartphone,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { isPushSupported, getPushPermission, subscribeToPush, unsubscribeFromPush, isSubscribed, isIos, isStandalone } from '@/lib/push'
 
 export default function SettingsPage() {
   const { user, profile, role, isDirector } = useAuth()
@@ -33,6 +37,50 @@ export default function SettingsPage() {
   const [requiresApproval, setRequiresApproval] = useState(false)
   const [approvalSaving, setApprovalSaving] = useState(false)
   const [divisionName, setDivisionName] = useState('')
+  const [pushState, setPushState] = useState<'unknown' | 'unsupported' | 'denied' | 'enabled' | 'disabled' | 'needs-pwa'>('unknown')
+  const [pushBusy, setPushBusy] = useState(false)
+  const [iosNeedsInstall, setIosNeedsInstall] = useState(false)
+
+  useEffect(() => {
+    const check = async () => {
+      if (!isPushSupported()) {
+        // iOS Safari outside PWA: PushManager not exposed unless installed on home screen
+        if (isIos() && !isStandalone()) {
+          setPushState('needs-pwa')
+          setIosNeedsInstall(true)
+          return
+        }
+        setPushState('unsupported')
+        return
+      }
+      const perm = getPushPermission()
+      if (perm === 'denied') { setPushState('denied'); return }
+      const has = await isSubscribed()
+      setPushState(has ? 'enabled' : 'disabled')
+    }
+    check()
+  }, [])
+
+  const handleEnablePush = async () => {
+    setPushBusy(true)
+    const res = await subscribeToPush()
+    setPushBusy(false)
+    if (res.ok) {
+      setPushState('enabled')
+      toast.success('Уведомления включены')
+    } else {
+      toast.error(res.reason || 'Не удалось включить')
+      if (getPushPermission() === 'denied') setPushState('denied')
+    }
+  }
+
+  const handleDisablePush = async () => {
+    setPushBusy(true)
+    await unsubscribeFromPush()
+    setPushBusy(false)
+    setPushState('disabled')
+    toast.success('Уведомления выключены')
+  }
 
   useEffect(() => {
     if (!isDirector || !profile?.division_id) return
@@ -150,6 +198,53 @@ export default function SettingsPage() {
           <Save className="w-4 h-4" />
           {saved ? 'Сохранено!' : 'Сохранить'}
         </Button>
+      </div>
+
+      {/* Push notifications */}
+      <div className="card-premium p-5 space-y-3">
+        <h2 className="text-heading-3 text-text-primary flex items-center gap-2">
+          {pushState === 'enabled' ? <Bell className="w-5 h-5 text-accent" /> : <BellOff className="w-5 h-5 text-text-tertiary" />}
+          Push-уведомления
+        </h2>
+        <p className="text-body-sm text-text-secondary">
+          Получайте уведомления, даже когда сайт закрыт, — как в обычном мессенджере.
+        </p>
+
+        {iosNeedsInstall && (
+          <div className="rounded-xl border border-amber-400/30 bg-amber-400/5 p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <Smartphone className="w-4 h-4 text-amber-400" />
+              <p className="text-body-sm font-semibold text-text-primary">Для iPhone: установи сайт на главный экран</p>
+            </div>
+            <ol className="list-decimal list-inside text-caption text-text-secondary space-y-0.5 pl-1">
+              <li>Открой сайт в <b>Safari</b> (не Chrome)</li>
+              <li>Нажми «Поделиться» (квадрат со стрелкой вверх)</li>
+              <li>Выбери «На экран Домой»</li>
+              <li>Открой приложение с экрана и вернись сюда — кнопка «Включить» станет доступной</li>
+            </ol>
+          </div>
+        )}
+
+        {pushState === 'unsupported' && (
+          <p className="text-caption text-text-tertiary">Твой браузер не поддерживает web push. Попробуй Chrome / Safari.</p>
+        )}
+        {pushState === 'denied' && (
+          <p className="text-caption text-amber-400">
+            Ты заблокировал уведомления в браузере. Чтобы включить: Настройки браузера → Уведомления → разреши для 24karidesk.ru.
+          </p>
+        )}
+        {pushState === 'disabled' && (
+          <Button onClick={handleEnablePush} loading={pushBusy} className="w-full">
+            <Bell className="w-4 h-4" />
+            Включить push-уведомления
+          </Button>
+        )}
+        {pushState === 'enabled' && (
+          <Button variant="secondary" onClick={handleDisablePush} loading={pushBusy} className="w-full">
+            <BellOff className="w-4 h-4" />
+            Выключить push-уведомления
+          </Button>
+        )}
       </div>
 
       {/* Director approval toggle */}
