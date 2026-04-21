@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'director' | 'employee' | 'contractor'
 
-export type TicketStatus = 'new' | 'assigned' | 'in_progress' | 'info_requested' | 'completed' | 'verified' | 'rejected'
+export type TicketStatus = 'new' | 'pending_approval' | 'assigned' | 'in_progress' | 'info_requested' | 'completed' | 'verified' | 'rejected'
 
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent'
 
@@ -32,6 +32,7 @@ export interface Division {
   code: string | null
   sort_order: number
   is_active: boolean
+  requires_approval: boolean
   created_at: string
 }
 

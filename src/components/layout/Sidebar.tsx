@@ -20,6 +20,7 @@ import {
   Moon,
   Sun,
   ChevronLeft,
+  Gavel,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useState } from 'react'
@@ -34,6 +35,7 @@ const navItems = [
   { href: '/dashboard', label: 'Главная', icon: LayoutDashboard, roles: ['admin', 'director', 'employee', 'contractor'] },
   { href: '/tickets/new', label: 'Новая заявка', icon: TicketPlus, roles: ['employee'] },
   { href: '/tickets', label: 'Все заявки', icon: ClipboardList, roles: ['admin', 'director'] },
+  { href: '/approvals', label: 'На согласовании', icon: Gavel, roles: ['admin', 'director'] },
   { href: '/my-tickets', label: 'Мои заявки', icon: ClipboardList, roles: ['employee'] },
   { href: '/work', label: 'Мои задания', icon: Briefcase, roles: ['contractor'] },
   { href: '/expenses', label: 'Прочие расходы', icon: Receipt, roles: ['admin'] },

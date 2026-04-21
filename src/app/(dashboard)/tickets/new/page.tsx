@@ -122,6 +122,20 @@ export default function NewTicketPage() {
     if (!user || !selectedStore || !selectedCategory) return
     setLoading(true)
     try {
+      // Fetch division flag to decide whether ticket needs approval first.
+      // Urgent tickets always bypass approval.
+      let initialStatus: 'new' | 'pending_approval' = 'new'
+      if (priority !== 'urgent') {
+        const { data: division } = await supabase
+          .from('divisions')
+          .select('requires_approval')
+          .eq('id', selectedStore.division_id)
+          .single()
+        if (division?.requires_approval) {
+          initialStatus = 'pending_approval'
+        }
+      }
+
       // Create ticket
       const { data: ticket, error } = await supabase
         .from('tickets')
@@ -133,6 +147,7 @@ export default function NewTicketPage() {
           contact_phone: contactPhone,
           priority,
           created_by: user.id,
+          status: initialStatus,
         })
         .select('id, ticket_number')
         .single()

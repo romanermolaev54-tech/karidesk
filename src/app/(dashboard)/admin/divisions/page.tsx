@@ -7,7 +7,8 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import type { Division } from '@/types/database'
-import { Shield, Edit3, Save, Plus, Building2 } from 'lucide-react'
+import { Shield, Edit3, Save, Plus, Building2, Gavel } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export default function DivisionsPage() {
   const { isAdmin } = useAuth()
@@ -26,6 +27,19 @@ export default function DivisionsPage() {
     const { data } = await supabase.from('divisions').select('*').order('sort_order')
     if (data) setDivisions(data)
     setLoading(false)
+  }
+
+  const toggleApproval = async (div: Division, next: boolean) => {
+    const { error } = await supabase
+      .from('divisions')
+      .update({ requires_approval: next })
+      .eq('id', div.id)
+    if (error) {
+      toast.error('Ошибка: ' + error.message)
+      return
+    }
+    setDivisions(prev => prev.map(d => d.id === div.id ? { ...d, requires_approval: next } : d))
+    toast.success(next ? `Согласование включено для ${div.name}` : `Согласование выключено для ${div.name}`)
   }
 
   const handleEdit = (div: Division) => {
@@ -90,19 +104,41 @@ export default function DivisionsPage() {
         <div className="space-y-2">
           {divisions.map(d => (
             <div key={d.id} className="card-premium p-4">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center">
+              <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-accent/10 flex items-center justify-center flex-shrink-0">
                     <Building2 className="w-5 h-5 text-accent" />
                   </div>
-                  <div>
-                    <p className="text-body-sm font-medium text-text-primary">{d.name}</p>
-                    {d.code && <p className="text-caption text-text-tertiary">{d.code}</p>}
+                  <div className="min-w-0">
+                    <p className="text-body-sm font-medium text-text-primary truncate">{d.name}</p>
+                    {d.code && <p className="text-caption text-text-tertiary truncate">{d.code}</p>}
                   </div>
                 </div>
-                <button onClick={() => handleEdit(d)} className="p-2 rounded-lg text-text-tertiary hover:text-accent hover:bg-accent/5 transition-colors">
-                  <Edit3 className="w-4 h-4" />
-                </button>
+                <div className="flex items-center gap-2 flex-shrink-0">
+                  <label className="flex items-center gap-2 cursor-pointer" title="Требовать согласование ДП (срочные минуют)">
+                    <Gavel className={`w-4 h-4 ${d.requires_approval ? 'text-accent' : 'text-text-tertiary'}`} />
+                    <span
+                      className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
+                        d.requires_approval ? 'bg-accent' : 'bg-surface-elevated/60'
+                      }`}
+                    >
+                      <input
+                        type="checkbox"
+                        className="sr-only"
+                        checked={!!d.requires_approval}
+                        onChange={e => toggleApproval(d, e.target.checked)}
+                      />
+                      <span
+                        className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${
+                          d.requires_approval ? 'translate-x-5' : 'translate-x-1'
+                        }`}
+                      />
+                    </span>
+                  </label>
+                  <button onClick={() => handleEdit(d)} className="p-2 rounded-lg text-text-tertiary hover:text-accent hover:bg-accent/5 transition-colors">
+                    <Edit3 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           ))}

@@ -295,6 +295,19 @@ export default function TicketDetailPage() {
       </div>
 
       {/* Action buttons */}
+      {(isAdmin || isDirector) && ticket.status === 'pending_approval' && (
+        <div className="flex gap-2">
+          <Button onClick={() => updateStatus('new')} className="flex-1">
+            <CheckCircle className="w-4 h-4" />
+            Одобрить
+          </Button>
+          <Button variant="danger" onClick={() => setShowRejectModal(true)} className="flex-1">
+            <XCircle className="w-4 h-4" />
+            Отклонить
+          </Button>
+        </div>
+      )}
+
       {canManage && ticket.status === 'new' && (
         <div className="flex gap-2">
           <Button onClick={() => setShowAssignModal(true)} className="flex-1">

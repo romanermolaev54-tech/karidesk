@@ -1,5 +1,6 @@
 export const TICKET_STATUSES = {
   new: { label: 'Новая', color: 'info', icon: 'Plus' },
+  pending_approval: { label: 'На согласовании', color: 'warning', icon: 'ClockAlert' },
   assigned: { label: 'Назначена', color: 'warning', icon: 'UserCheck' },
   in_progress: { label: 'В работе', color: 'accent', icon: 'Wrench' },
   info_requested: { label: 'Запрос информации', color: 'warning', icon: 'MessageCircle' },

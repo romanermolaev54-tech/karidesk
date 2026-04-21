@@ -9,6 +9,7 @@ import {
   ClipboardList,
   Briefcase,
   User,
+  Gavel,
 } from 'lucide-react'
 import type { UserRole } from '@/types/database'
 
@@ -41,6 +42,7 @@ export function MobileNavbar({ userRole }: MobileNavbarProps) {
     director: [
       { href: '/dashboard', label: 'Главная', icon: LayoutDashboard },
       { href: '/tickets', label: 'Заявки', icon: ClipboardList },
+      { href: '/approvals', label: 'Согласование', icon: Gavel },
       { href: '/reports', label: 'Отчёты', icon: Briefcase },
       { href: '/settings', label: 'Профиль', icon: User },
     ],

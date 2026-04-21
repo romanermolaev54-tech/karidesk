@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
@@ -14,11 +14,12 @@ import {
   LogOut,
   Save,
   KeyRound,
+  Gavel,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
 export default function SettingsPage() {
-  const { user, profile, role } = useAuth()
+  const { user, profile, role, isDirector } = useAuth()
   const supabase = createClient()
   const router = useRouter()
 
@@ -29,6 +30,42 @@ export default function SettingsPage() {
   const [newPassword, setNewPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [changingPassword, setChangingPassword] = useState(false)
+  const [requiresApproval, setRequiresApproval] = useState(false)
+  const [approvalSaving, setApprovalSaving] = useState(false)
+  const [divisionName, setDivisionName] = useState('')
+
+  useEffect(() => {
+    if (!isDirector || !profile?.division_id) return
+    supabase
+      .from('divisions')
+      .select('name, requires_approval')
+      .eq('id', profile.division_id)
+      .single()
+      .then(({ data }) => {
+        if (data) {
+          setRequiresApproval(!!data.requires_approval)
+          setDivisionName(data.name)
+        }
+      })
+  }, [isDirector, profile?.division_id]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  const handleApprovalToggle = async (next: boolean) => {
+    if (!profile?.division_id) return
+    setApprovalSaving(true)
+    const prev = requiresApproval
+    setRequiresApproval(next)
+    const { error } = await supabase
+      .from('divisions')
+      .update({ requires_approval: next })
+      .eq('id', profile.division_id)
+    setApprovalSaving(false)
+    if (error) {
+      setRequiresApproval(prev)
+      toast.error('Не удалось сохранить: ' + error.message)
+      return
+    }
+    toast.success(next ? 'Согласование включено' : 'Согласование выключено')
+  }
 
   const handleSave = async () => {
     if (!user) return
@@ -114,6 +151,45 @@ export default function SettingsPage() {
           {saved ? 'Сохранено!' : 'Сохранить'}
         </Button>
       </div>
+
+      {/* Director approval toggle */}
+      {isDirector && (
+        <div className="card-premium p-5 space-y-3">
+          <h2 className="text-heading-3 text-text-primary flex items-center gap-2">
+            <Gavel className="w-5 h-5 text-text-tertiary" />
+            Согласование заявок
+          </h2>
+          <p className="text-body-sm text-text-secondary">
+            Если включено, все новые заявки из магазинов подразделения <span className="font-semibold text-text-primary">{divisionName || '—'}</span> будут сначала приходить вам на согласование.
+          </p>
+          <p className="text-caption text-text-tertiary">
+            Срочные заявки всегда обходят согласование — идут в работу сразу.
+          </p>
+          <label className="flex items-center justify-between gap-3 pt-2 cursor-pointer">
+            <span className="text-body-sm font-medium text-text-primary">
+              {requiresApproval ? 'Включено' : 'Выключено'}
+            </span>
+            <span
+              className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                requiresApproval ? 'bg-accent' : 'bg-surface-elevated/60'
+              } ${approvalSaving ? 'opacity-60' : ''}`}
+            >
+              <input
+                type="checkbox"
+                className="sr-only"
+                checked={requiresApproval}
+                disabled={approvalSaving}
+                onChange={e => handleApprovalToggle(e.target.checked)}
+              />
+              <span
+                className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                  requiresApproval ? 'translate-x-6' : 'translate-x-1'
+                }`}
+              />
+            </span>
+          </label>
+        </div>
+      )}
 
       {/* Password change */}
       <div className="card-premium p-5 space-y-4">
