@@ -35,6 +35,7 @@ import Link from 'next/link'
 import { formatTicketNumber, formatRelative } from '@/lib/utils'
 import { TICKET_STATUSES } from '@/lib/constants'
 import type { TicketStatus } from '@/types/database'
+import { compressImage } from '@/lib/image'
 
 interface StoreTicketMini {
   id: string
@@ -129,18 +130,19 @@ export default function NewTicketPage() {
     setFilteredStores(filtered.slice(0, 20))
   }, [storeSearch, stores])
 
-  const handlePhotoAdd = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = Array.from(e.target.files || [])
-    if (photos.length + files.length > 5) return
-    setPhotos(prev => [...prev, ...files])
-    files.forEach(file => {
+  const handlePhotoAdd = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const rawFiles = Array.from(e.target.files || [])
+    if (photos.length + rawFiles.length > 5) return
+    e.target.value = ''
+    const compressed = await Promise.all(rawFiles.map(f => compressImage(f).catch(() => f)))
+    setPhotos(prev => [...prev, ...compressed])
+    compressed.forEach(file => {
       const reader = new FileReader()
       reader.onloadend = () => {
         setPhotoPreviews(prev => [...prev, reader.result as string])
       }
       reader.readAsDataURL(file)
     })
-    e.target.value = ''
   }, [photos.length])
 
   const removePhoto = useCallback((index: number) => {

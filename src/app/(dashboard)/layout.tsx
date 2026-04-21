@@ -40,7 +40,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             onClick={() => setMobileMenuOpen(false)}
           />
           <div className="relative w-[280px] h-full animate-slide-in-left">
-            <Sidebar userRole={userRole} userName={userName} />
+            <Sidebar
+              userRole={userRole}
+              userName={userName}
+              mobile
+              onNavigate={() => setMobileMenuOpen(false)}
+            />
             <button
               onClick={() => setMobileMenuOpen(false)}
               className="absolute top-4 right-[-44px] p-2 rounded-xl bg-surface-card border border-border text-text-secondary"

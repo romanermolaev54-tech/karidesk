@@ -33,6 +33,7 @@ import {
   Paperclip,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { compressImage } from '@/lib/image'
 
 export default function TicketDetailPage() {
   const params = useParams()
@@ -146,15 +147,16 @@ export default function TicketDetailPage() {
     loadMessages()
   }
 
-  const sendChatPhoto = async (file: File) => {
-    if (!user || !file) return
-    if (!file.type.startsWith('image/')) {
+  const sendChatPhoto = async (rawFile: File) => {
+    if (!user || !rawFile) return
+    if (!rawFile.type.startsWith('image/')) {
       toast.error('Прикрепите изображение')
       return
     }
     setSendingPhoto(true)
     try {
-      const ext = file.name.split('.').pop() || 'jpg'
+      const file = await compressImage(rawFile).catch(() => rawFile)
+      const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
       const path = `${ticketId}/chat/${crypto.randomUUID()}.${ext}`
       const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, file)
       if (upErr) throw upErr
@@ -303,11 +305,13 @@ export default function TicketDetailPage() {
   }
 
   const handlePhotoUpload = async (e: React.ChangeEvent<HTMLInputElement>, photoType: 'completion' | 'act') => {
-    const file = e.target.files?.[0]
-    if (!file || !user) return
+    const rawFile = e.target.files?.[0]
+    e.target.value = ''
+    if (!rawFile || !user) return
     setUploading(true)
 
-    const ext = file.name.split('.').pop()
+    const file = await compressImage(rawFile).catch(() => rawFile)
+    const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
     const path = `${ticketId}/${crypto.randomUUID()}.${ext}`
     const { error } = await supabase.storage.from('ticket-photos').upload(path, file)
 
@@ -326,7 +330,6 @@ export default function TicketDetailPage() {
     }
 
     setUploading(false)
-    e.target.value = ''
   }
 
   if (loading) {

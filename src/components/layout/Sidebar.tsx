@@ -30,6 +30,8 @@ import type { UserRole } from '@/types/database'
 interface SidebarProps {
   userRole: UserRole
   userName: string
+  mobile?: boolean
+  onNavigate?: () => void
 }
 
 const navItems = [
@@ -52,36 +54,41 @@ const navItems = [
   { href: '/admin/stores', label: 'Управление магазинами', icon: Store, roles: ['admin'] },
 ]
 
-export function Sidebar({ userRole, userName }: SidebarProps) {
+export function Sidebar({ userRole, userName, mobile = false, onNavigate }: SidebarProps) {
   const pathname = usePathname()
   const { theme, setTheme } = useTheme()
   const [collapsed, setCollapsed] = useState(false)
+  const isCollapsed = !mobile && collapsed
 
   const filteredItems = navItems.filter(item => item.roles.includes(userRole))
 
   return (
     <aside
       className={cn(
-        'hidden lg:flex flex-col h-screen sticky top-0 border-r border-border',
-        'bg-surface-card/50 glass transition-all duration-300',
-        collapsed ? 'w-[72px]' : 'w-[260px]'
+        'flex flex-col h-screen border-r border-border',
+        'bg-surface-card glass',
+        mobile
+          ? 'w-full'
+          : cn('hidden lg:flex sticky top-0 transition-all duration-300', isCollapsed ? 'w-[72px]' : 'w-[260px]')
       )}
     >
       {/* Logo */}
       <div className="flex items-center gap-3 px-5 py-5 border-b border-border">
         <Image src="/logo-kari-icon.png" alt="Kari" width={32} height={32} className="flex-shrink-0" />
-        {!collapsed && (
+        {!isCollapsed && (
           <span className="text-heading-3 font-bold gradient-text">KariDesk</span>
         )}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className={cn(
-            'ml-auto p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-elevated/40 transition-all',
-            collapsed && 'ml-0'
-          )}
-        >
-          <ChevronLeft className={cn('w-4 h-4 transition-transform', collapsed && 'rotate-180')} />
-        </button>
+        {!mobile && (
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className={cn(
+              'ml-auto p-1.5 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-elevated/40 transition-all',
+              isCollapsed && 'ml-0'
+            )}
+          >
+            <ChevronLeft className={cn('w-4 h-4 transition-transform', isCollapsed && 'rotate-180')} />
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
@@ -97,18 +104,19 @@ export function Sidebar({ userRole, userName }: SidebarProps) {
             <Link
               key={item.href}
               href={item.href}
+              onClick={() => onNavigate?.()}
               className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-xl transition-all duration-200',
                 'text-body-sm font-medium',
                 isActive
                   ? 'bg-accent/10 text-accent border border-accent/20 shadow-glow-sm'
                   : 'text-text-secondary hover:text-text-primary hover:bg-surface-elevated/40',
-                collapsed && 'justify-center px-0'
+                isCollapsed && 'justify-center px-0'
               )}
-              title={collapsed ? item.label : undefined}
+              title={isCollapsed ? item.label : undefined}
             >
               <Icon className={cn('w-5 h-5 flex-shrink-0', isActive && 'text-accent')} />
-              {!collapsed && <span>{item.label}</span>}
+              {!isCollapsed && <span>{item.label}</span>}
             </Link>
           )
         })}
@@ -121,26 +129,27 @@ export function Sidebar({ userRole, userName }: SidebarProps) {
           className={cn(
             'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl',
             'text-body-sm text-text-secondary hover:text-text-primary hover:bg-surface-elevated/40 transition-all',
-            collapsed && 'justify-center px-0'
+            isCollapsed && 'justify-center px-0'
           )}
         >
           {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-          {!collapsed && <span>{theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}</span>}
+          {!isCollapsed && <span>{theme === 'dark' ? 'Светлая тема' : 'Тёмная тема'}</span>}
         </button>
 
         <Link
           href="/settings"
+          onClick={() => onNavigate?.()}
           className={cn(
             'flex items-center gap-3 w-full px-3 py-2.5 rounded-xl',
             'text-body-sm text-text-secondary hover:text-text-primary hover:bg-surface-elevated/40 transition-all',
-            collapsed && 'justify-center px-0'
+            isCollapsed && 'justify-center px-0'
           )}
         >
           <Settings className="w-5 h-5" />
-          {!collapsed && <span>Настройки</span>}
+          {!isCollapsed && <span>Настройки</span>}
         </Link>
 
-        {!collapsed && (
+        {!isCollapsed && (
           <div className="flex items-center gap-3 px-3 py-2 rounded-xl bg-surface-elevated/30">
             <div className="w-8 h-8 rounded-full gradient-accent flex items-center justify-center text-white text-caption font-bold flex-shrink-0">
               {userName.charAt(0).toUpperCase()}
