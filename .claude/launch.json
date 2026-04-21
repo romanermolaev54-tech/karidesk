@@ -2,11 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "karidesk-dev",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["--yes", "next", "dev", "-p", "3001"],
-      "port": 3001,
-      "cwd": "/Users/romanermolaev/Desktop/CLAUDE CODE/kari-desk"
+      "name": "karidesk",
+      "runtimeExecutable": "/bin/sh",
+      "runtimeArgs": ["/Users/romanermolaev/Desktop/CLAUDE CODE/kari-desk/start-dev.sh"],
+      "port": 3001
     }
   ]
 }

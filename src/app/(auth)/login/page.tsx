@@ -22,7 +22,13 @@ export default function LoginPage() {
     const supabase = createClient()
 
     // Convert phone to email format for auth
-    const digits = phone.replace(/\D/g, '')
+    let digits = phone.replace(/\D/g, '')
+    // Normalize: 8xxx -> 7xxx, 10 digits -> prepend 7
+    if (digits.length === 11 && digits.startsWith('8')) {
+      digits = '7' + digits.slice(1)
+    } else if (digits.length === 10) {
+      digits = '7' + digits
+    }
     const email = `${digits}@karidesk.ru`
 
     const { error } = await supabase.auth.signInWithPassword({

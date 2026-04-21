@@ -21,11 +21,17 @@ export default function RegisterPage() {
     e.preventDefault()
     setLoading(true)
 
-    const digits = phone.replace(/\D/g, '')
+    let digits = phone.replace(/\D/g, '')
     if (digits.length < 10) {
       toast.error('Введите корректный номер телефона')
       setLoading(false)
       return
+    }
+    // Normalize: 8xxx -> 7xxx, 10 digits -> prepend 7
+    if (digits.length === 11 && digits.startsWith('8')) {
+      digits = '7' + digits.slice(1)
+    } else if (digits.length === 10) {
+      digits = '7' + digits
     }
 
     const supabase = createClient()
