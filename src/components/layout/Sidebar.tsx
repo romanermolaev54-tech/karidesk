@@ -21,6 +21,7 @@ import {
   Sun,
   ChevronLeft,
   Gavel,
+  Route as RouteIcon,
 } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { useState } from 'react'
@@ -43,6 +44,7 @@ const navItems = [
   { href: '/stores', label: 'Магазины', icon: Store, roles: ['admin', 'director'] },
   { href: '/notifications', label: 'Уведомления', icon: Bell, roles: ['admin', 'director', 'employee', 'contractor'] },
   { type: 'divider' as const, roles: ['admin'] },
+  { href: '/admin/routes', label: 'Маршруты', icon: RouteIcon, roles: ['admin'] },
   { href: '/admin/users', label: 'Пользователи', icon: Users, roles: ['admin'] },
   { href: '/admin/divisions', label: 'Подразделения', icon: Building2, roles: ['admin'] },
   { href: '/admin/categories', label: 'Категории', icon: Tags, roles: ['admin'] },

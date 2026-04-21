@@ -12,7 +12,10 @@ import {
   MapPin,
   ChevronRight,
   Inbox,
+  Route as RouteIcon,
+  Calendar,
 } from 'lucide-react'
+import type { Route } from '@/types/database'
 
 export default function WorkPage() {
   const { user } = useAuth()
@@ -21,6 +24,36 @@ export default function WorkPage() {
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [tab, setTab] = useState<'active' | 'completed'>('active')
+  const [routes, setRoutes] = useState<(Route & { tickets: { position: number; ticket: Ticket }[] })[]>([])
+
+  useEffect(() => {
+    if (!user) return
+    const load = async () => {
+      const todayIso = new Date().toISOString().slice(0, 10)
+      const { data } = await supabase
+        .from('routes')
+        .select(`
+          *,
+          tickets:route_tickets(
+            position,
+            ticket:tickets(
+              id, ticket_number, description, status, store_id,
+              store:stores(store_number, name, city, address)
+            )
+          )
+        `)
+        .eq('assigned_to', user.id)
+        .gte('route_date', todayIso)
+        .in('status', ['planned', 'in_progress'])
+        .order('route_date', { ascending: true })
+      const normalized = (data || []).map(r => ({
+        ...r,
+        tickets: (r.tickets || []).sort((a: { position: number }, b: { position: number }) => a.position - b.position),
+      })) as unknown as (Route & { tickets: { position: number; ticket: Ticket }[] })[]
+      setRoutes(normalized)
+    }
+    load()
+  }, [user, supabase])
 
   useEffect(() => {
     if (!user) return
@@ -55,6 +88,58 @@ export default function WorkPage() {
         <h1 className="text-heading-2 text-text-primary">Мои задания</h1>
         <p className="text-body-sm text-text-tertiary">Назначенные вам заявки</p>
       </div>
+
+      {/* Routes */}
+      {routes.length > 0 && (
+        <div className="space-y-3">
+          <h2 className="text-heading-3 text-text-primary flex items-center gap-2">
+            <RouteIcon className="w-5 h-5 text-accent" />
+            Мои маршруты
+          </h2>
+          {routes.map(r => {
+            const d = new Date(r.route_date + 'T00:00:00')
+            const dateLabel = d.toLocaleDateString('ru-RU', { day: '2-digit', month: 'long', weekday: 'short' })
+            return (
+              <div key={r.id} className="card-premium p-4 border-l-4 border-l-accent">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-accent" />
+                    <span className="text-body-sm font-semibold text-text-primary">{dateLabel}</span>
+                    {r.name && <span className="text-caption text-text-tertiary">· {r.name}</span>}
+                  </div>
+                  <Badge variant={r.status === 'in_progress' ? 'accent' : 'info'} size="sm">
+                    {r.status === 'in_progress' ? 'В работе' : 'Запланирован'}
+                  </Badge>
+                </div>
+                <div className="space-y-1.5">
+                  {r.tickets.map((rt, idx) => {
+                    const t = rt.ticket
+                    if (!t) return null
+                    return (
+                      <Link
+                        key={t.id}
+                        href={`/tickets/${t.id}`}
+                        className="flex items-center gap-3 p-2 rounded-lg bg-surface-elevated/20 hover:bg-surface-elevated/40 transition-colors"
+                      >
+                        <span className="w-7 h-7 rounded-lg gradient-accent text-white text-caption font-bold flex items-center justify-center flex-shrink-0">
+                          {idx + 1}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-caption font-semibold text-text-primary">
+                            {formatTicketNumber(t.ticket_number)} · #{t.store?.store_number} {t.store?.name}
+                          </p>
+                          <p className="text-micro text-text-tertiary line-clamp-1">{t.description}</p>
+                        </div>
+                        <ChevronRight className="w-4 h-4 text-text-tertiary flex-shrink-0" />
+                      </Link>
+                    )
+                  })}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
 
       {/* Tabs */}
       <div className="flex gap-1 p-1 rounded-xl bg-surface-elevated/30 border border-border">

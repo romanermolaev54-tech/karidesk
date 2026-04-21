@@ -5,8 +5,10 @@ export const TICKET_STATUSES = {
   in_progress: { label: 'В работе', color: 'accent', icon: 'Wrench' },
   info_requested: { label: 'Запрос информации', color: 'warning', icon: 'MessageCircle' },
   completed: { label: 'Выполнена', color: 'success', icon: 'CheckCircle' },
+  partially_completed: { label: 'Частично выполнена', color: 'warning', icon: 'AlertTriangle' },
   verified: { label: 'Подтверждена', color: 'success', icon: 'ShieldCheck' },
   rejected: { label: 'Отклонена', color: 'danger', icon: 'XCircle' },
+  merged: { label: 'Объединена', color: 'default', icon: 'GitMerge' },
 } as const
 
 export const TICKET_PRIORITIES = {

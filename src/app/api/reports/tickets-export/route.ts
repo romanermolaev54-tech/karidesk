@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic'
 type Scope = 'active' | 'completed' | 'all'
 
 const ACTIVE_STATUSES: TicketStatus[] = ['new', 'assigned', 'in_progress', 'info_requested']
-const COMPLETED_STATUSES: TicketStatus[] = ['completed', 'verified']
+const COMPLETED_STATUSES: TicketStatus[] = ['completed', 'partially_completed', 'verified']
 
 export async function GET(req: NextRequest) {
   const supabase = createServerSupabaseClient()

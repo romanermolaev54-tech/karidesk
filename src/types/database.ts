@@ -1,6 +1,6 @@
 export type UserRole = 'admin' | 'director' | 'employee' | 'contractor'
 
-export type TicketStatus = 'new' | 'pending_approval' | 'assigned' | 'in_progress' | 'info_requested' | 'completed' | 'verified' | 'rejected'
+export type TicketStatus = 'new' | 'pending_approval' | 'assigned' | 'in_progress' | 'info_requested' | 'completed' | 'partially_completed' | 'verified' | 'rejected' | 'merged'
 
 export type TicketPriority = 'low' | 'normal' | 'high' | 'urgent'
 
@@ -80,6 +80,9 @@ export interface Ticket {
   verified_by: string | null
   rejection_reason: string | null
   admin_comment: string | null
+  partial_comment: string | null
+  continuation_of: string | null
+  merged_into_id: string | null
   contact_phone: string
   created_at: string
   updated_at: string
@@ -166,5 +169,28 @@ export interface Notification {
   push_sent: boolean
   email_sent: boolean
   created_at: string
+  ticket?: Ticket
+}
+
+export type RouteStatus = 'planned' | 'in_progress' | 'completed' | 'cancelled'
+
+export interface Route {
+  id: string
+  name: string | null
+  route_date: string
+  assigned_to: string | null
+  created_by: string | null
+  status: RouteStatus
+  note: string | null
+  created_at: string
+  updated_at: string
+  assignee?: Profile
+  tickets?: RouteTicket[]
+}
+
+export interface RouteTicket {
+  route_id: string
+  ticket_id: string
+  position: number
   ticket?: Ticket
 }

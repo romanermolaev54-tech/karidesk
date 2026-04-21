@@ -56,7 +56,7 @@ export async function GET(req: NextRequest) {
       completed_at,
       store:stores(store_number, name)
     `)
-    .in('status', ['completed', 'verified'])
+    .in('status', ['completed', 'partially_completed', 'verified'])
     .gte('completed_at', fromIso)
     .lt('completed_at', toIso)
     .order('completed_at', { ascending: true })

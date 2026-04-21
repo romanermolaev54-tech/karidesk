@@ -57,6 +57,11 @@ export default function TicketDetailPage() {
   const [showRejectModal, setShowRejectModal] = useState(false)
   const [rejectReason, setRejectReason] = useState('')
   const [photoPreview, setPhotoPreview] = useState<string | null>(null)
+  const [showCompleteModal, setShowCompleteModal] = useState(false)
+  const [completeMode, setCompleteMode] = useState<'full' | 'partial'>('full')
+  const [partialComment, setPartialComment] = useState('')
+  const [completing, setCompleting] = useState(false)
+  const [creatingContinuation, setCreatingContinuation] = useState(false)
 
   const loadTicket = useCallback(async () => {
     const { data } = await supabase
@@ -185,6 +190,62 @@ export default function TicketDetailPage() {
     })
     loadTicket()
     loadHistory()
+  }
+
+  const completeTicket = async () => {
+    if (!user) return
+    setCompleting(true)
+    const nowIso = new Date().toISOString()
+    const updates: Record<string, unknown> = { completed_at: nowIso }
+    if (completeMode === 'full') {
+      updates.status = 'completed'
+      updates.partial_comment = null
+    } else {
+      updates.status = 'partially_completed'
+      updates.partial_comment = partialComment.trim()
+    }
+    await supabase.from('tickets').update(updates).eq('id', ticketId)
+    await supabase.from('ticket_history').insert({
+      ticket_id: ticketId,
+      action: 'status_changed',
+      old_value: ticket?.status,
+      new_value: updates.status,
+      actor_id: user.id,
+      details: completeMode === 'partial' ? { partial_comment: partialComment.trim() } : null,
+    })
+    setShowCompleteModal(false)
+    setPartialComment('')
+    setCompleteMode('full')
+    setCompleting(false)
+    loadTicket()
+    loadHistory()
+  }
+
+  const createContinuation = async () => {
+    if (!user || !ticket) return
+    setCreatingContinuation(true)
+    const description = (ticket.partial_comment?.trim() || 'Продолжение заявки #' + ticket.ticket_number)
+    const { data: newTicket, error } = await supabase
+      .from('tickets')
+      .insert({
+        store_id: ticket.store_id,
+        category_id: ticket.category_id,
+        division_id: ticket.division_id,
+        description,
+        contact_phone: ticket.contact_phone,
+        priority: ticket.priority,
+        created_by: user.id,
+        status: 'new',
+        continuation_of: ticket.id,
+      })
+      .select('id, ticket_number')
+      .single()
+    setCreatingContinuation(false)
+    if (error || !newTicket) {
+      alert('Ошибка: ' + (error?.message || 'не удалось создать продолжение'))
+      return
+    }
+    router.push(`/tickets/${newTicket.id}`)
   }
 
   const rejectTicket = async () => {
@@ -320,7 +381,27 @@ export default function TicketDetailPage() {
         </div>
       )}
 
-      {canManage && ticket.status === 'completed' && (
+      {ticket.status === 'partially_completed' && (
+        <div className="card-premium p-4 border-l-4 border-l-amber-400">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-5 h-5 text-amber-400 flex-shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-body-sm font-semibold text-text-primary">Заявка выполнена частично</p>
+              {ticket.partial_comment && (
+                <p className="text-body-sm text-text-secondary mt-1 whitespace-pre-wrap">{ticket.partial_comment}</p>
+              )}
+              {isAdmin && (
+                <Button size="sm" className="mt-3" onClick={createContinuation} loading={creatingContinuation}>
+                  <CheckCircle className="w-4 h-4" />
+                  Создать продолжение
+                </Button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {canManage && (ticket.status === 'completed' || ticket.status === 'partially_completed') && (
         <div className="flex gap-2">
           <Button onClick={() => updateStatus('verified')} className="flex-1">
             <CheckCircle className="w-4 h-4" />
@@ -341,7 +422,7 @@ export default function TicketDetailPage() {
             </Button>
           )}
           {ticket.status === 'in_progress' && (
-            <Button onClick={() => updateStatus('completed')} className="flex-1">
+            <Button onClick={() => { setCompleteMode('full'); setPartialComment(''); setShowCompleteModal(true) }} className="flex-1">
               <CheckCircle className="w-4 h-4" />
               Завершить
             </Button>
@@ -657,6 +738,66 @@ export default function TicketDetailPage() {
             </Button>
             <Button onClick={assignTicket} loading={assigning} disabled={!selectedContractor} className="flex-1">
               Назначить
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Complete modal (full / partial) */}
+      <Modal isOpen={showCompleteModal} onClose={() => setShowCompleteModal(false)} title="Завершение заявки">
+        <div className="space-y-4">
+          <p className="text-body-sm text-text-secondary">Укажите, как была выполнена заявка. Выезд подрядчика попадает в отчёт в обоих случаях.</p>
+          <div className="space-y-2">
+            <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+              completeMode === 'full' ? 'border-accent bg-accent/10' : 'border-border hover:border-accent/40'
+            }`}>
+              <input
+                type="radio"
+                name="complete_mode"
+                checked={completeMode === 'full'}
+                onChange={() => setCompleteMode('full')}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <p className="text-body-sm font-medium text-text-primary">Выполнена полностью</p>
+                <p className="text-caption text-text-tertiary mt-0.5">Все работы по заявке сделаны.</p>
+              </div>
+            </label>
+            <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
+              completeMode === 'partial' ? 'border-amber-400 bg-amber-400/10' : 'border-border hover:border-amber-400/40'
+            }`}>
+              <input
+                type="radio"
+                name="complete_mode"
+                checked={completeMode === 'partial'}
+                onChange={() => setCompleteMode('partial')}
+                className="mt-0.5"
+              />
+              <div className="flex-1">
+                <p className="text-body-sm font-medium text-text-primary">Выполнена частично / не выполнена</p>
+                <p className="text-caption text-text-tertiary mt-0.5">Выезд был, но часть работ осталась. Обязательно укажите, что осталось сделать.</p>
+              </div>
+            </label>
+          </div>
+          {completeMode === 'partial' && (
+            <Textarea
+              label="Что осталось сделать / причина"
+              placeholder="Например: не хватило светильника, нужно приехать повторно"
+              value={partialComment}
+              onChange={e => setPartialComment(e.target.value)}
+              rows={3}
+            />
+          )}
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowCompleteModal(false)} className="flex-1">Отмена</Button>
+            <Button
+              onClick={completeTicket}
+              loading={completing}
+              disabled={completeMode === 'partial' && !partialComment.trim()}
+              className="flex-1"
+            >
+              <CheckCircle className="w-4 h-4" />
+              Подтвердить
             </Button>
           </div>
         </div>

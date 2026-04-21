@@ -27,7 +27,22 @@ import {
   AlertTriangle,
   Upload,
   Building2,
+  Clock,
+  ChevronDown,
+  ChevronUp,
 } from 'lucide-react'
+import Link from 'next/link'
+import { formatTicketNumber, formatRelative } from '@/lib/utils'
+import { TICKET_STATUSES } from '@/lib/constants'
+import type { TicketStatus } from '@/types/database'
+
+interface StoreTicketMini {
+  id: string
+  ticket_number: number
+  description: string
+  status: TicketStatus
+  created_at: string
+}
 
 const CATEGORY_ICONS: Record<string, React.ElementType> = {
   Wrench, Zap, Store: StoreIcon, Snowflake, Package, Truck, Droplets, AlertTriangle,
@@ -55,6 +70,9 @@ export default function NewTicketPage() {
   const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>('normal')
   const [photos, setPhotos] = useState<File[]>([])
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
+  const [storeHistory, setStoreHistory] = useState<StoreTicketMini[]>([])
+  const [storeHistoryLoading, setStoreHistoryLoading] = useState(false)
+  const [storeHistoryOpen, setStoreHistoryOpen] = useState(false)
 
   // Load stores and categories
   useEffect(() => {
@@ -73,6 +91,28 @@ export default function NewTicketPage() {
   useEffect(() => {
     if (profile?.phone) setContactPhone(profile.phone)
   }, [profile])
+
+  // Load recent tickets for selected store
+  useEffect(() => {
+    if (!selectedStore) {
+      setStoreHistory([])
+      setStoreHistoryOpen(false)
+      return
+    }
+    setStoreHistoryLoading(true)
+    const since = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString()
+    supabase
+      .from('tickets')
+      .select('id, ticket_number, description, status, created_at')
+      .eq('store_id', selectedStore.id)
+      .gte('created_at', since)
+      .order('created_at', { ascending: false })
+      .limit(20)
+      .then(({ data }) => {
+        setStoreHistory(data || [])
+        setStoreHistoryLoading(false)
+      })
+  }, [selectedStore, supabase])
 
   // Filter stores
   useEffect(() => {
@@ -290,6 +330,63 @@ export default function NewTicketPage() {
               </div>
             )}
           </div>
+
+          {/* Store ticket history */}
+          {selectedStore && (() => {
+            const activeStatuses: TicketStatus[] = ['new', 'pending_approval', 'assigned', 'in_progress', 'info_requested']
+            const doneStatuses: TicketStatus[] = ['completed', 'partially_completed', 'verified']
+            const activeCount = storeHistory.filter(t => activeStatuses.includes(t.status)).length
+            const doneCount = storeHistory.filter(t => doneStatuses.includes(t.status)).length
+            return (
+              <div className="card-premium p-4">
+                <button
+                  type="button"
+                  onClick={() => setStoreHistoryOpen(v => !v)}
+                  className="w-full flex items-center gap-3 text-left"
+                >
+                  <div className="p-2 rounded-lg bg-accent/10">
+                    <Clock className="w-4 h-4 text-accent" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-body-sm font-semibold text-text-primary">По магазину за 30 дней</p>
+                    <p className="text-caption text-text-tertiary">
+                      {storeHistoryLoading
+                        ? 'Загрузка…'
+                        : storeHistory.length === 0
+                          ? 'Заявок не было — первой будет текущая'
+                          : `${activeCount} активных, ${doneCount} закрытых${storeHistory.length > activeCount + doneCount ? `, остальные прочее` : ''}`}
+                    </p>
+                  </div>
+                  {storeHistoryOpen ? <ChevronUp className="w-4 h-4 text-text-tertiary" /> : <ChevronDown className="w-4 h-4 text-text-tertiary" />}
+                </button>
+                {storeHistoryOpen && storeHistory.length > 0 && (
+                  <div className="mt-3 space-y-1.5 max-h-64 overflow-y-auto">
+                    {storeHistory.map(t => {
+                      const st = TICKET_STATUSES[t.status]
+                      return (
+                        <Link
+                          key={t.id}
+                          href={`/tickets/${t.id}`}
+                          target="_blank"
+                          className="flex items-start gap-2 p-2 rounded-lg bg-surface-elevated/20 hover:bg-surface-elevated/40 transition-colors"
+                        >
+                          <span className="text-caption font-semibold text-accent/80 flex-shrink-0">
+                            {formatTicketNumber(t.ticket_number)}
+                          </span>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-caption text-text-primary truncate">{t.description}</p>
+                            <p className="text-micro text-text-tertiary">
+                              {st?.label || t.status} · {formatRelative(t.created_at)}
+                            </p>
+                          </div>
+                        </Link>
+                      )
+                    })}
+                  </div>
+                )}
+              </div>
+            )
+          })()}
         </div>
       )}
 
