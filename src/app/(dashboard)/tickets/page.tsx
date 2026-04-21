@@ -142,7 +142,7 @@ export default function TicketsPage() {
 
   const saveRoute = async () => {
     if (!routeContractorId || !routeDate || routeOrderedIds.length === 0) {
-      toast.error('Заполните подрядчика, дату и список заявок')
+      toast.error('Заполните исполнителя, дату и список заявок')
       return
     }
     setSavingRoute(true)
@@ -465,7 +465,7 @@ export default function TicketsPage() {
       <Modal isOpen={showRouteModal} onClose={() => setShowRouteModal(false)} title="Создание маршрута">
         <div className="space-y-4">
           <p className="text-body-sm text-text-secondary">
-            Расставьте заявки в порядке посещения. Подрядчик получит моментальное уведомление
+            Расставьте заявки в порядке посещения. Исполнитель получит моментальное уведомление
             и увидит маршрут в своих заданиях.
           </p>
           <div className="grid grid-cols-2 gap-3">
@@ -479,13 +479,13 @@ export default function TicketsPage() {
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-caption text-text-tertiary">Подрядчик</span>
+              <span className="text-caption text-text-tertiary">Исполнитель</span>
               <select
                 value={routeContractorId}
                 onChange={e => setRouteContractorId(e.target.value)}
                 className="bg-surface-elevated/40 border border-surface-elevated/60 rounded-lg px-3 py-2 text-body-sm text-text-primary"
               >
-                {contractors.length === 0 && <option value="">Нет подрядчиков</option>}
+                {contractors.length === 0 && <option value="">Нет исполнителей</option>}
                 {contractors.map(c => (
                   <option key={c.id} value={c.id}>{c.full_name}</option>
                 ))}

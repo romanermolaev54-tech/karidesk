@@ -57,7 +57,7 @@ export default function RoutesPage() {
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteRoute = async (routeId: string) => {
-    if (!confirm('Удалить маршрут? Назначенные заявки останутся за подрядчиком.')) return
+    if (!confirm('Удалить маршрут? Назначенные заявки останутся за исполнителем.')) return
     const { error } = await supabase.from('routes').delete().eq('id', routeId)
     if (error) {
       toast.error('Ошибка: ' + error.message)
@@ -81,7 +81,7 @@ export default function RoutesPage() {
       <div>
         <h1 className="text-heading-2 text-text-primary flex items-center gap-2">
           <RouteIcon className="w-6 h-6 text-accent" />
-          Маршруты подрядчиков
+          Маршруты исполнителей
         </h1>
         <p className="text-body-sm text-text-tertiary">
           Маршруты создаются из списка заявок: выбери несколько и нажми «Маршрут».

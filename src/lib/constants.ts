@@ -33,7 +33,7 @@ export const USER_ROLES = {
   admin: { label: 'Администратор', color: 'accent' },
   director: { label: 'Директор подразделения', color: 'info' },
   employee: { label: 'Сотрудник магазина', color: 'default' },
-  contractor: { label: 'Подрядчик', color: 'warning' },
+  contractor: { label: 'Исполнитель', color: 'warning' },
 } as const
 
 export const PHOTO_TYPES = {

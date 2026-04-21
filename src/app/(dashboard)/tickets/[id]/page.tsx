@@ -30,7 +30,9 @@ import {
   X,
   Upload,
   Loader2,
+  Paperclip,
 } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 export default function TicketDetailPage() {
   const params = useParams()
@@ -62,6 +64,7 @@ export default function TicketDetailPage() {
   const [partialComment, setPartialComment] = useState('')
   const [completing, setCompleting] = useState(false)
   const [creatingContinuation, setCreatingContinuation] = useState(false)
+  const [sendingPhoto, setSendingPhoto] = useState(false)
 
   const loadTicket = useCallback(async () => {
     const { data } = await supabase
@@ -141,6 +144,36 @@ export default function TicketDetailPage() {
     setNewMessage('')
     setSendingMessage(false)
     loadMessages()
+  }
+
+  const sendChatPhoto = async (file: File) => {
+    if (!user || !file) return
+    if (!file.type.startsWith('image/')) {
+      toast.error('Прикрепите изображение')
+      return
+    }
+    setSendingPhoto(true)
+    try {
+      const ext = file.name.split('.').pop() || 'jpg'
+      const path = `${ticketId}/chat/${crypto.randomUUID()}.${ext}`
+      const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, file)
+      if (upErr) throw upErr
+      const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
+      await supabase.from('ticket_messages').insert({
+        ticket_id: ticketId,
+        sender_id: user.id,
+        message: newMessage.trim() || '',
+        message_type: 'comment',
+        attachment_url: urlData.publicUrl,
+        attachment_type: 'image',
+      })
+      setNewMessage('')
+      await loadMessages()
+    } catch (e) {
+      toast.error('Ошибка отправки: ' + (e as Error).message)
+    } finally {
+      setSendingPhoto(false)
+    }
   }
 
   const assignTicket = async () => {
@@ -580,7 +613,23 @@ export default function TicketDetailPage() {
                           {msg.sender?.full_name}
                         </p>
                       )}
-                      <p className="text-body-sm text-text-primary">{msg.message}</p>
+                      {msg.attachment_url && msg.attachment_type === 'image' && (
+                        <button
+                          type="button"
+                          onClick={() => setPhotoPreview(msg.attachment_url)}
+                          className="block mb-2 rounded-lg overflow-hidden max-w-full"
+                        >
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={msg.attachment_url}
+                            alt="Вложение"
+                            className="w-full max-h-64 object-cover"
+                          />
+                        </button>
+                      )}
+                      {msg.message && (
+                        <p className="text-body-sm text-text-primary whitespace-pre-wrap">{msg.message}</p>
+                      )}
                       <p className="text-micro text-text-tertiary mt-1">
                         {formatRelative(msg.created_at)}
                       </p>
@@ -593,6 +642,20 @@ export default function TicketDetailPage() {
 
           {/* Message input */}
           <div className="flex gap-2">
+            <label className="cursor-pointer p-2.5 rounded-xl border border-border bg-surface-muted/30 hover:bg-surface-elevated/40 text-text-tertiary hover:text-accent transition-colors flex items-center justify-center" title="Прикрепить фото">
+              {sendingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Paperclip className="w-4 h-4" />}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                disabled={sendingPhoto}
+                onChange={e => {
+                  const file = e.target.files?.[0]
+                  if (file) sendChatPhoto(file)
+                  e.target.value = ''
+                }}
+              />
+            </label>
             <input
               type="text"
               placeholder="Написать сообщение..."
@@ -726,8 +789,8 @@ export default function TicketDetailPage() {
       <Modal isOpen={showAssignModal} onClose={() => setShowAssignModal(false)} title="Назначить исполнителя">
         <div className="space-y-4">
           <Select
-            label="Подрядчик"
-            placeholder="Выберите подрядчика..."
+            label="Исполнитель"
+            placeholder="Выберите исполнителя..."
             value={selectedContractor}
             onChange={e => setSelectedContractor(e.target.value)}
             options={contractors.map(c => ({ value: c.id, label: c.full_name }))}
@@ -746,7 +809,7 @@ export default function TicketDetailPage() {
       {/* Complete modal (full / partial) */}
       <Modal isOpen={showCompleteModal} onClose={() => setShowCompleteModal(false)} title="Завершение заявки">
         <div className="space-y-4">
-          <p className="text-body-sm text-text-secondary">Укажите, как была выполнена заявка. Выезд подрядчика попадает в отчёт в обоих случаях.</p>
+          <p className="text-body-sm text-text-secondary">Укажите, как была выполнена заявка. Выезд исполнителя попадает в отчёт в обоих случаях.</p>
           <div className="space-y-2">
             <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
               completeMode === 'full' ? 'border-accent bg-accent/10' : 'border-border hover:border-accent/40'

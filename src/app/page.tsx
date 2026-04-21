@@ -65,7 +65,7 @@ export default function LandingPage() {
 
           <p className="text-body md:text-heading-3 text-text-secondary mb-10 max-w-2xl mx-auto font-normal">
             Единая платформа для управления заявками по всем магазинам сети.
-            Подавайте заявки, отслеживайте выполнение, контролируйте подрядчиков.
+            Подавайте заявки, отслеживайте выполнение, контролируйте исполнителей.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -94,7 +94,7 @@ export default function LandingPage() {
             {
               icon: Zap,
               title: 'Мгновенно',
-              desc: 'Заявка сразу попадает к администратору и подрядчику',
+              desc: 'Заявка сразу попадает к администратору и исполнителю',
             },
             {
               icon: Shield,
@@ -104,7 +104,7 @@ export default function LandingPage() {
             {
               icon: BarChart3,
               title: 'Аналитика',
-              desc: 'Отчёты по подразделениям, магазинам и подрядчикам',
+              desc: 'Отчёты по подразделениям, магазинам и исполнителям',
             },
           ].map((feature, i) => (
             <div key={i} className="card-premium p-6 text-center">

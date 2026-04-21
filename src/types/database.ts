@@ -114,6 +114,8 @@ export interface TicketMessage {
   sender_id: string
   message: string
   message_type: 'comment' | 'info_request' | 'info_response' | 'status_change' | 'system'
+  attachment_url: string | null
+  attachment_type: string | null
   created_at: string
   sender?: Profile
 }
