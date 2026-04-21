@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal'
 import { USER_ROLES } from '@/lib/constants'
 import type { Profile, UserRole, Division } from '@/types/database'
 import toast from 'react-hot-toast'
+import { Input } from '@/components/ui/Input'
 import {
   Shield,
   Search,
@@ -21,6 +22,7 @@ import {
   ToggleLeft,
   ToggleRight,
   Users,
+  UserX,
 } from 'lucide-react'
 
 type Mode = 'open' | 'moderation'
@@ -43,7 +45,11 @@ export default function UsersPage() {
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'pending' | 'blocked'>('all')
   const [editUser, setEditUser] = useState<ExtendedProfile | null>(null)
   const [editRole, setEditRole] = useState<UserRole>('employee')
+  const [editName, setEditName] = useState('')
+  const [editPhone, setEditPhone] = useState('')
+  const [editNewPassword, setEditNewPassword] = useState('')
   const [saving, setSaving] = useState(false)
+  const [releasing, setReleasing] = useState(false)
   const [regMode, setRegMode] = useState<Mode>('open')
   const [regModeSaving, setRegModeSaving] = useState(false)
 
@@ -103,20 +109,59 @@ export default function UsersPage() {
   const handleEditRole = (u: ExtendedProfile) => {
     setEditUser(u)
     setEditRole(u.role)
+    setEditName(u.full_name || '')
+    setEditPhone(u.phone || '')
+    setEditNewPassword('')
   }
 
-  const handleSaveRole = async () => {
+  const handleSaveUser = async () => {
     if (!editUser) return
     setSaving(true)
-    const { error } = await supabase
-      .from('profiles')
-      .update({ role: editRole, updated_at: new Date().toISOString() })
-      .eq('id', editUser.id)
-    if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
-    setUsers(prev => prev.map(u => u.id === editUser.id ? { ...u, role: editRole } : u))
-    toast.success('Роль изменена')
-    setEditUser(null)
+    const payload: Record<string, unknown> = {
+      full_name: editName.trim(),
+      phone: editPhone.trim(),
+      role: editRole,
+    }
+    if (editNewPassword.trim().length >= 4) payload.password = editNewPassword.trim()
+    const res = await fetch(`/api/users/${editUser.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
     setSaving(false)
+    if (!res.ok) {
+      const msg = await res.text().catch(() => '')
+      toast.error('Ошибка: ' + (msg || res.status))
+      return
+    }
+    setUsers(prev => prev.map(u => u.id === editUser.id ? {
+      ...u,
+      full_name: editName.trim(),
+      phone: editPhone.trim(),
+      role: editRole,
+    } : u))
+    toast.success(editNewPassword ? 'Сохранено, пароль обновлён' : 'Сохранено')
+    setEditUser(null)
+  }
+
+  const handleRelease = async () => {
+    if (!editUser) return
+    if (!confirm(`Освободить аккаунт "${editUser.full_name}"? Имя и телефон обнулятся, пароль будет сброшен, вход заблокирован.`)) return
+    setReleasing(true)
+    const res = await fetch(`/api/users/${editUser.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ release: true }),
+    })
+    setReleasing(false)
+    if (!res.ok) {
+      const msg = await res.text().catch(() => '')
+      toast.error('Ошибка: ' + (msg || res.status))
+      return
+    }
+    toast.success('Аккаунт освобождён. Задай новый пароль при следующем назначении.')
+    await loadUsers()
+    setEditUser(null)
   }
 
   const filtered = useMemo(() => {
@@ -325,30 +370,62 @@ export default function UsersPage() {
         </div>
       )}
 
-      {/* Edit role modal (admin only) */}
-      <Modal isOpen={!!editUser} onClose={() => setEditUser(null)} title="Изменить роль">
+      {/* Edit user modal (admin only) */}
+      <Modal isOpen={!!editUser} onClose={() => setEditUser(null)} title="Редактировать пользователя">
         {editUser && (
           <div className="space-y-4">
             <div className="flex items-center gap-3 p-3 rounded-xl bg-surface-muted/30 border border-border">
               <UserCheck className="w-5 h-5 text-text-tertiary" />
-              <div>
-                <p className="text-body-sm font-medium text-text-primary">{editUser.full_name}</p>
-                <p className="text-caption text-text-tertiary">{editUser.phone}</p>
+              <div className="min-w-0">
+                <p className="text-caption text-text-tertiary">Логин</p>
+                <p className="text-body-sm font-mono text-text-primary truncate">{editUser.email}</p>
               </div>
             </div>
+            <Input
+              label="ФИО / Имя"
+              value={editName}
+              onChange={e => setEditName(e.target.value)}
+              placeholder="Иванов Иван"
+            />
+            <Input
+              label="Телефон"
+              value={editPhone}
+              onChange={e => setEditPhone(e.target.value)}
+              placeholder="79999999999"
+            />
             <Select
               label="Роль"
               value={editRole}
               onChange={e => setEditRole(e.target.value as UserRole)}
               options={Object.entries(USER_ROLES).map(([value, { label }]) => ({ value, label }))}
             />
+            <Input
+              label="Новый пароль (опционально)"
+              type="text"
+              value={editNewPassword}
+              onChange={e => setEditNewPassword(e.target.value)}
+              placeholder="Оставь пустым, чтобы не менять"
+              helperText="Минимум 4 символа. После смены сообщи пароль пользователю."
+            />
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setEditUser(null)} className="flex-1">Отмена</Button>
-              <Button onClick={handleSaveRole} loading={saving} className="flex-1">
+              <Button onClick={handleSaveUser} loading={saving} className="flex-1">
                 <Save className="w-4 h-4" />
                 Сохранить
               </Button>
             </div>
+            <button
+              type="button"
+              onClick={handleRelease}
+              disabled={releasing}
+              className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-caption text-danger hover:bg-danger/5 border border-danger/20 transition-colors"
+            >
+              <UserX className="w-4 h-4" />
+              {releasing ? 'Освобождаю…' : 'Освободить аккаунт (при увольнении)'}
+            </button>
+            <p className="text-micro text-text-tertiary text-center">
+              Освобождение обнулит имя и телефон, заблокирует вход и сбросит пароль. Приготовь аккаунт для следующего человека — просто открой и задай новые данные.
+            </p>
           </div>
         )}
       </Modal>
