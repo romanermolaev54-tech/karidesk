@@ -59,15 +59,19 @@ export default function DivisionsPage() {
   const handleSave = async () => {
     setSaving(true)
     if (isNew) {
-      const { data } = await supabase.from('divisions').insert({
+      const { data, error } = await supabase.from('divisions').insert({
         name: editName,
         code: editCode || null,
         sort_order: divisions.length + 1,
       }).select().single()
+      if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
       if (data) setDivisions(prev => [...prev, data])
+      toast.success('Подразделение добавлено')
     } else if (editDiv?.id) {
-      await supabase.from('divisions').update({ name: editName, code: editCode || null }).eq('id', editDiv.id)
+      const { error } = await supabase.from('divisions').update({ name: editName, code: editCode || null }).eq('id', editDiv.id)
+      if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
       setDivisions(prev => prev.map(d => d.id === editDiv.id ? { ...d, name: editName, code: editCode } : d))
+      toast.success('Сохранено')
     }
     setEditDiv(null)
     setSaving(false)

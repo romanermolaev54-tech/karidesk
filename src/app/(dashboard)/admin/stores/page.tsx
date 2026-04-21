@@ -10,6 +10,7 @@ import { Modal } from '@/components/ui/Modal'
 import { Badge } from '@/components/ui/Badge'
 import type { Division } from '@/types/database'
 import { Shield, Edit3, Save, Plus, Store, Search, MapPin } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface StoreItem {
   id: string
@@ -63,7 +64,7 @@ export default function AdminStoresPage() {
   const handleSave = async () => {
     setSaving(true)
     if (isNew) {
-      const { data } = await supabase.from('stores').insert({
+      const { data, error } = await supabase.from('stores').insert({
         store_number: form.store_number,
         name: form.name,
         city: form.city || null,
@@ -71,16 +72,20 @@ export default function AdminStoresPage() {
         phone: form.phone || null,
         division_id: form.division_id,
       }).select('*, divisions(name)').single()
+      if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
       if (data) setStores(prev => [...prev, data])
+      toast.success('Магазин добавлен')
     } else if (editStore?.id) {
-      await supabase.from('stores').update({
+      const { error } = await supabase.from('stores').update({
         name: form.name,
         city: form.city || null,
         address: form.address || null,
         phone: form.phone || null,
         division_id: form.division_id,
       }).eq('id', editStore.id)
+      if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
       setStores(prev => prev.map(s => s.id === editStore.id ? { ...s, ...form, divisions: divisions.find(d => d.id === form.division_id) ? { name: divisions.find(d => d.id === form.division_id)!.name } : s.divisions } : s))
+      toast.success('Сохранено')
     }
     setEditStore(null)
     setSaving(false)

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { Shield, Edit3, Save, Plus, Tags } from 'lucide-react'
+import toast from 'react-hot-toast'
 
 interface Category {
   id: string
@@ -57,20 +58,24 @@ export default function CategoriesPage() {
   const handleSave = async () => {
     setSaving(true)
     if (isNew) {
-      const { data } = await supabase.from('ticket_categories').insert({
+      const { data, error } = await supabase.from('ticket_categories').insert({
         name: editName,
         color: editColor || null,
         default_deadline_hours: editDeadline ? parseInt(editDeadline) : null,
         sort_order: categories.length + 1,
       }).select().single()
+      if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
       if (data) setCategories(prev => [...prev, data])
+      toast.success('Категория добавлена')
     } else if (editCat?.id) {
-      await supabase.from('ticket_categories').update({
+      const { error } = await supabase.from('ticket_categories').update({
         name: editName,
         color: editColor || null,
         default_deadline_hours: editDeadline ? parseInt(editDeadline) : null,
       }).eq('id', editCat.id)
+      if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
       setCategories(prev => prev.map(c => c.id === editCat.id ? { ...c, name: editName, color: editColor, default_deadline_hours: editDeadline ? parseInt(editDeadline) : null } : c))
+      toast.success('Сохранено')
     }
     setEditCat(null)
     setSaving(false)
