@@ -4,12 +4,14 @@ import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { MobileNavbar } from '@/components/layout/MobileNavbar'
 import { useAuth } from '@/hooks/useAuth'
+import { useNotifications } from '@/hooks/useNotifications'
 import { useState } from 'react'
 import { X } from 'lucide-react'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { profile, role, loading } = useAuth()
+  const { user, profile, role, loading } = useAuth()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const { unreadCount } = useNotifications({ userId: user?.id || null })
 
   if (loading) {
     return (
@@ -51,7 +53,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
-        <Header onMenuToggle={() => setMobileMenuOpen(true)} />
+        <Header onMenuToggle={() => setMobileMenuOpen(true)} notificationCount={unreadCount} />
         <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">
           {children}
         </main>
