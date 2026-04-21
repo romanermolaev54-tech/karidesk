@@ -31,51 +31,38 @@ export function useAuth(): AuthState {
         .select('*')
         .eq('id', userId)
         .single()
-      if (mounted) setProfile(data)
+      if (mounted && data) setProfile(data)
     }
 
-    async function getUser() {
+    async function init() {
       try {
-        // Use getSession with timeout to avoid lock issues
-        const sessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise((_, reject) =>
-          setTimeout(() => reject(new Error('Auth timeout')), 5000)
-        )
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!mounted) return
 
-        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise]) as Awaited<ReturnType<typeof supabase.auth.getSession>>
-        const currentUser = session?.user ?? null
-
-        if (mounted) {
-          setUser(currentUser)
-          if (currentUser) {
-            await loadProfile(currentUser.id)
-          }
+        if (session?.user) {
+          setUser(session.user)
+          await loadProfile(session.user.id)
+        } else {
+          setUser(null)
+          setProfile(null)
         }
-      } catch (e) {
-        console.warn('Auth session check failed, trying getUser:', e)
-        try {
-          const { data: { user: fallbackUser } } = await supabase.auth.getUser()
-          if (mounted) {
-            setUser(fallbackUser)
-            if (fallbackUser) {
-              await loadProfile(fallbackUser.id)
-            }
-          }
-        } catch {
-          // No session available
-          if (mounted) setUser(null)
+      } catch {
+        if (mounted) {
+          setUser(null)
+          setProfile(null)
         }
       }
       if (mounted) setLoading(false)
     }
 
-    getUser()
+    init()
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(async (_event, session) => {
       if (!mounted) return
-      setUser(session?.user ?? null)
-      if (session?.user) {
-        await loadProfile(session.user.id)
+      const currentUser = session?.user ?? null
+      setUser(currentUser)
+      if (currentUser) {
+        await loadProfile(currentUser.id)
       } else {
         setProfile(null)
       }

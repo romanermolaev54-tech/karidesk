@@ -60,7 +60,10 @@ export default function RegisterPage() {
 
     if (data.user) {
       toast.success('Регистрация прошла успешно!')
-      router.push('/dashboard')
+      // Wait for profile trigger to create the profile
+      await new Promise(r => setTimeout(r, 1000))
+      router.refresh()
+      window.location.href = '/dashboard'
     }
   }
 
