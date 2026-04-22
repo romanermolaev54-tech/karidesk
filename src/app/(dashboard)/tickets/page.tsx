@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
@@ -33,11 +34,16 @@ export default function TicketsPage() {
   const { profile, isAdmin, isDirector } = useAuth()
   const supabase = createClient()
 
+  const searchParams = useSearchParams()
+  const initialStatus = searchParams.get('status') as TicketStatus | null
+  const initialPriority = searchParams.get('priority')
+
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [loading, setLoading] = useState(true)
   const [search, setSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>('all')
-  const [showFilters, setShowFilters] = useState(false)
+  const [statusFilter, setStatusFilter] = useState<TicketStatus | 'all'>(initialStatus || 'all')
+  const [priorityFilter, setPriorityFilter] = useState<string>(initialPriority || 'all')
+  const [showFilters, setShowFilters] = useState(!!initialStatus || !!initialPriority)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
   const [showMergeModal, setShowMergeModal] = useState(false)
@@ -56,7 +62,7 @@ export default function TicketsPage() {
 
   useEffect(() => {
     loadTickets()
-  }, [statusFilter]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [statusFilter, priorityFilter]) // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadTickets() {
     setLoading(true)
@@ -78,6 +84,10 @@ export default function TicketsPage() {
     } else {
       // Hide merged tickets from the default list — they belong to a parent
       query = query.neq('status', 'merged')
+    }
+
+    if (priorityFilter !== 'all') {
+      query = query.eq('priority', priorityFilter)
     }
 
     // Directors see only their division
@@ -310,14 +320,24 @@ export default function TicketsPage() {
       {showFilters && (
         <div className="flex flex-wrap gap-2 animate-fade-in">
           <button
-            onClick={() => setStatusFilter('all')}
+            onClick={() => { setStatusFilter('all'); setPriorityFilter('all') }}
             className={`px-3 py-1.5 rounded-lg text-body-sm font-medium transition-colors ${
-              statusFilter === 'all'
+              statusFilter === 'all' && priorityFilter === 'all'
                 ? 'gradient-accent text-white'
                 : 'bg-surface-elevated/40 text-text-tertiary hover:text-text-secondary'
             }`}
           >
             Все ({tickets.length})
+          </button>
+          <button
+            onClick={() => { setPriorityFilter(priorityFilter === 'urgent' ? 'all' : 'urgent') }}
+            className={`px-3 py-1.5 rounded-lg text-body-sm font-medium transition-colors ${
+              priorityFilter === 'urgent'
+                ? 'bg-red-500/80 text-white'
+                : 'bg-surface-elevated/40 text-text-tertiary hover:text-text-secondary'
+            }`}
+          >
+            Срочные
           </button>
           {(Object.keys(TICKET_STATUSES) as TicketStatus[]).map(status => (
             <button

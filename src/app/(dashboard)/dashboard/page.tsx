@@ -81,11 +81,42 @@ export default function DashboardPage() {
     setLoading(false)
   }
 
+  const baseList = role === 'employee' ? '/my-tickets' : role === 'contractor' ? '/work' : '/tickets'
+  const isAdminOrDir = role === 'admin' || role === 'director'
+
   const stats = [
-    { label: 'Новые', value: counts.new, icon: TicketPlus, color: 'text-blue-400', bg: 'bg-blue-500/10' },
-    { label: 'В работе', value: counts.in_progress, icon: Clock, color: 'text-amber-400', bg: 'bg-amber-500/10' },
-    { label: 'Выполнено', value: counts.completed, icon: CheckCircle, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
-    { label: 'Срочные', value: counts.urgent, icon: AlertTriangle, color: 'text-red-400', bg: 'bg-red-500/10' },
+    {
+      label: 'Новые',
+      value: counts.new,
+      icon: TicketPlus,
+      color: 'text-blue-400',
+      bg: 'bg-blue-500/10',
+      href: isAdminOrDir ? `${baseList}?status=new` : baseList,
+    },
+    {
+      label: 'В работе',
+      value: counts.in_progress,
+      icon: Clock,
+      color: 'text-amber-400',
+      bg: 'bg-amber-500/10',
+      href: isAdminOrDir ? `${baseList}?status=in_progress` : baseList,
+    },
+    {
+      label: 'Выполнено',
+      value: counts.completed,
+      icon: CheckCircle,
+      color: 'text-emerald-400',
+      bg: 'bg-emerald-500/10',
+      href: isAdminOrDir ? `${baseList}?status=completed` : baseList,
+    },
+    {
+      label: 'Срочные',
+      value: counts.urgent,
+      icon: AlertTriangle,
+      color: 'text-red-400',
+      bg: 'bg-red-500/10',
+      href: isAdminOrDir ? `${baseList}?priority=urgent` : baseList,
+    },
   ]
 
   return (
@@ -113,7 +144,11 @@ export default function DashboardPage() {
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
         {stats.map((stat) => (
-          <div key={stat.label} className="card-premium p-4 lg:p-5">
+          <Link
+            key={stat.label}
+            href={stat.href}
+            className="card-interactive p-4 lg:p-5 block transition-transform hover:-translate-y-0.5"
+          >
             <div className="flex items-center gap-3 mb-3">
               <div className={`p-2 rounded-xl ${stat.bg}`}>
                 <stat.icon className={`w-5 h-5 ${stat.color}`} />
@@ -123,7 +158,7 @@ export default function DashboardPage() {
               {loading ? '—' : stat.value}
             </p>
             <p className="text-body-sm text-text-secondary mt-1">{stat.label}</p>
-          </div>
+          </Link>
         ))}
       </div>
 
