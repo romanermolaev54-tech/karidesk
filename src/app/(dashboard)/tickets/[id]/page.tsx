@@ -811,8 +811,42 @@ export default function TicketDetailPage() {
 
       {/* Complete modal (full / partial) */}
       <Modal isOpen={showCompleteModal} onClose={() => setShowCompleteModal(false)} title="Завершение заявки">
+        {(() => {
+          const completionPhotos = photos.filter(p => p.photo_type === 'completion').length
+          const actPhotos = photos.filter(p => p.photo_type === 'act').length
+          const photosOk = completionPhotos > 0 && actPhotos > 0
+          return (
         <div className="space-y-4">
           <p className="text-body-sm text-text-secondary">Укажите, как была выполнена заявка. Выезд исполнителя попадает в отчёт в обоих случаях.</p>
+
+          {/* Required photos checklist */}
+          <div className={`rounded-xl border p-3 space-y-2 ${
+            photosOk ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-400/30 bg-amber-400/5'
+          }`}>
+            <p className="text-caption font-semibold text-text-primary">Обязательные вложения</p>
+            <div className="flex items-center gap-2 text-caption">
+              {completionPhotos > 0
+                ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                : <XCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />}
+              <span className="text-text-secondary">
+                Фото выполнения работ {completionPhotos > 0 ? `(${completionPhotos})` : '— не приложено'}
+              </span>
+            </div>
+            <div className="flex items-center gap-2 text-caption">
+              {actPhotos > 0
+                ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                : <XCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />}
+              <span className="text-text-secondary">
+                Акт выполненных работ {actPhotos > 0 ? `(${actPhotos})` : '— не приложен'}
+              </span>
+            </div>
+            {!photosOk && (
+              <p className="text-caption text-amber-400 mt-1">
+                Закройте окно, перейдите во вкладку «Фото» и приложите недостающее, прежде чем завершать.
+              </p>
+            )}
+          </div>
+
           <div className="space-y-2">
             <label className={`flex gap-3 p-3 rounded-xl border cursor-pointer transition-colors ${
               completeMode === 'full' ? 'border-accent bg-accent/10' : 'border-border hover:border-accent/40'
@@ -859,7 +893,7 @@ export default function TicketDetailPage() {
             <Button
               onClick={completeTicket}
               loading={completing}
-              disabled={completeMode === 'partial' && !partialComment.trim()}
+              disabled={!photosOk || (completeMode === 'partial' && !partialComment.trim())}
               className="flex-1"
             >
               <CheckCircle className="w-4 h-4" />
@@ -867,6 +901,8 @@ export default function TicketDetailPage() {
             </Button>
           </div>
         </div>
+          )
+        })()}
       </Modal>
 
       {/* Reject modal */}
