@@ -31,6 +31,8 @@ import {
   Upload,
   Loader2,
   Paperclip,
+  Share2,
+  Flame,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { compressImage } from '@/lib/image'
@@ -38,7 +40,7 @@ import { compressImage } from '@/lib/image'
 export default function TicketDetailPage() {
   const params = useParams()
   const router = useRouter()
-  const { user, isAdmin, isDirector } = useAuth()
+  const { user, profile, isAdmin, isDirector, isEmployee } = useAuth()
   const supabase = createClient()
   const ticketId = params.id as string
 
@@ -66,6 +68,9 @@ export default function TicketDetailPage() {
   const [completing, setCompleting] = useState(false)
   const [creatingContinuation, setCreatingContinuation] = useState(false)
   const [sendingPhoto, setSendingPhoto] = useState(false)
+  const [showEscalateModal, setShowEscalateModal] = useState(false)
+  const [escalateNote, setEscalateNote] = useState('')
+  const [escalating, setEscalating] = useState(false)
 
   const loadTicket = useCallback(async () => {
     const { data } = await supabase
@@ -283,6 +288,80 @@ export default function TicketDetailPage() {
     router.push(`/tickets/${newTicket.id}`)
   }
 
+  const shareTicket = async () => {
+    if (!ticket) return
+    const url = `${window.location.origin}/tickets/${ticket.id}`
+    const summary = `Заявка ${formatTicketNumber(ticket.ticket_number)}\n${ticket.description}\n${ticket.store ? `Магазин: #${ticket.store.store_number} ${ticket.store.name}\n` : ''}${url}`
+    try {
+      const navAny = navigator as Navigator & { share?: (data: ShareData) => Promise<void> }
+      if (navAny.share) {
+        await navAny.share({ title: `KariDesk · ${formatTicketNumber(ticket.ticket_number)}`, text: summary, url })
+        return
+      }
+      await navigator.clipboard.writeText(summary)
+      toast.success('Ссылка и описание скопированы — вставь в мессенджер')
+    } catch {
+      // user cancelled share or copy failed
+    }
+  }
+
+  const ESCALATE_COOLDOWN_MIN = 60
+
+  const lastEscalateKey = (id: string) => `karidesk_escalate_${id}`
+
+  const escalateTicket = async () => {
+    if (!ticket || !user) return
+    setEscalating(true)
+    const note = escalateNote.trim()
+    const url = `${window.location.origin}/tickets/${ticket.id}`
+    const messageText = note
+      ? `🔥 Прошу ускорить выполнение!\n${note}`
+      : `🔥 Прошу ускорить выполнение этой заявки.`
+    // 1) Drop a chat message — admins/contractor will get standard notification
+    await supabase.from('ticket_messages').insert({
+      ticket_id: ticket.id,
+      sender_id: user.id,
+      message: messageText,
+      message_type: 'comment',
+    })
+    // 2) Push every admin separately so the notification stands out
+    const { data: admins } = await supabase
+      .from('profiles')
+      .select('id')
+      .eq('role', 'admin')
+      .eq('is_active', true)
+    if (admins && admins.length > 0) {
+      const rows = admins.map(a => ({
+        user_id: a.id,
+        ticket_id: ticket.id,
+        title: `🔥 Просьба ускорить заявку #${ticket.ticket_number}`,
+        message: note
+          ? `${profile?.full_name || 'Магазин'}: ${note}`
+          : `${profile?.full_name || 'Магазин'}: просит ускорить выполнение`,
+        type: 'action_required' as const,
+      }))
+      await supabase.from('notifications').insert(rows)
+    }
+    try { localStorage.setItem(lastEscalateKey(ticket.id), String(Date.now())) } catch { /* noop */ }
+    setEscalating(false)
+    setShowEscalateModal(false)
+    setEscalateNote('')
+    toast.success('Запрос отправлен админам')
+    void url
+    loadMessages()
+  }
+
+  const escalateCooldownRemaining = (): number => {
+    if (typeof window === 'undefined' || !ticket) return 0
+    try {
+      const last = parseInt(localStorage.getItem(lastEscalateKey(ticket.id)) || '0', 10)
+      if (!last) return 0
+      const elapsed = Date.now() - last
+      const remaining = ESCALATE_COOLDOWN_MIN * 60 * 1000 - elapsed
+      return remaining > 0 ? remaining : 0
+    } catch { return 0 }
+  }
+
   const rejectTicket = async () => {
     if (!user) return
     await supabase
@@ -372,6 +451,13 @@ export default function TicketDetailPage() {
             <h1 className="text-heading-2 text-text-primary">
               {formatTicketNumber(ticket.ticket_number)}
             </h1>
+            <button
+              onClick={shareTicket}
+              className="p-1.5 rounded-lg text-text-tertiary hover:text-accent hover:bg-accent/5 transition-colors"
+              title="Скопировать ссылку и описание"
+            >
+              <Share2 className="w-4 h-4" />
+            </button>
             <Badge
               variant={statusInfo.color as 'info' | 'warning' | 'success' | 'danger' | 'accent'}
               size="md"
@@ -390,6 +476,23 @@ export default function TicketDetailPage() {
           </p>
         </div>
       </div>
+
+      {/* Escalate (store creator only) */}
+      {isEmployee && user?.id === ticket.created_by && !['completed', 'verified', 'rejected', 'merged', 'partially_completed'].includes(ticket.status) && (() => {
+        const cooldown = escalateCooldownRemaining()
+        const cooldownMin = Math.ceil(cooldown / 60000)
+        return (
+          <Button
+            onClick={() => setShowEscalateModal(true)}
+            disabled={cooldown > 0}
+            variant={cooldown > 0 ? 'secondary' : 'danger'}
+            className="w-full"
+          >
+            <Flame className="w-4 h-4" />
+            {cooldown > 0 ? `Уже отправлено · повторно через ${cooldownMin} мин` : 'Поторопить с заявкой'}
+          </Button>
+        )
+      })()}
 
       {/* Action buttons */}
       {(isAdmin || isDirector) && ticket.status === 'pending_approval' && (
@@ -804,6 +907,29 @@ export default function TicketDetailPage() {
             </Button>
             <Button onClick={assignTicket} loading={assigning} disabled={!selectedContractor} className="flex-1">
               Назначить
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Escalate modal */}
+      <Modal isOpen={showEscalateModal} onClose={() => setShowEscalateModal(false)} title="Поторопить с заявкой">
+        <div className="space-y-4">
+          <p className="text-body-sm text-text-secondary">
+            Все администраторы получат моментальный пуш-сигнал «🔥 Просьба ускорить». Используй, если заявка реально срочная — повторно можно отправить через час.
+          </p>
+          <Textarea
+            label="Что хотите добавить (опционально)"
+            placeholder="Например: завтра приёмка от управляющей компании, без розетки магазин не откроем"
+            value={escalateNote}
+            onChange={e => setEscalateNote(e.target.value)}
+            rows={3}
+          />
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowEscalateModal(false)} className="flex-1">Отмена</Button>
+            <Button variant="danger" onClick={escalateTicket} loading={escalating} className="flex-1">
+              <Flame className="w-4 h-4" />
+              Отправить
             </Button>
           </div>
         </div>
