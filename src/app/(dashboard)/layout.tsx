@@ -3,6 +3,7 @@
 import { Sidebar } from '@/components/layout/Sidebar'
 import { Header } from '@/components/layout/Header'
 import { MobileNavbar } from '@/components/layout/MobileNavbar'
+import { EnablePushBanner } from '@/components/EnablePushBanner'
 import { useAuth } from '@/hooks/useAuth'
 import { useNotifications } from '@/hooks/useNotifications'
 import { useState } from 'react'
@@ -59,6 +60,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       {/* Main content */}
       <div className="flex-1 flex flex-col min-w-0">
         <Header onMenuToggle={() => setMobileMenuOpen(true)} notificationCount={unreadCount} />
+        <EnablePushBanner />
         <main className="flex-1 p-4 lg:p-6 pb-20 lg:pb-6">
           {children}
         </main>
