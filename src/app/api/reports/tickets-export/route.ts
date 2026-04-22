@@ -151,9 +151,8 @@ export async function GET(req: NextRequest) {
   })
 
   const buffer = await wb.xlsx.writeBuffer()
-  const fromTag = from || 'all'
-  const toTag = to || 'all'
-  const fileName = `tickets_${scope}_${fromTag}_${toTag}.xlsx`
+  const safe = (s: string | null | undefined): string => (s || 'all').replace(/[^a-zA-Z0-9_-]/g, '_')
+  const fileName = `tickets_${safe(scope)}_${safe(from)}_${safe(to)}.xlsx`
   return new NextResponse(buffer as ArrayBuffer, {
     headers: {
       'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

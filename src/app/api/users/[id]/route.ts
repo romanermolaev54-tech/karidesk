@@ -64,6 +64,9 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
 
   // Optional password change
   if (body.password) {
+    if (typeof body.password !== 'string' || body.password.length < 6) {
+      return NextResponse.json({ error: 'Пароль должен содержать минимум 6 символов' }, { status: 400 })
+    }
     const { error } = await admin.auth.admin.updateUserById(targetId, { password: body.password })
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }

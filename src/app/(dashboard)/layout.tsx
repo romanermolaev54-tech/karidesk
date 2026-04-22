@@ -35,12 +35,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
       {/* Mobile Sidebar Overlay */}
       {mobileMenuOpen && (
-        <div className="lg:hidden fixed inset-0 z-50">
+        <div
+          className="lg:hidden fixed inset-0 z-50"
+          onKeyDown={e => { if (e.key === 'Escape') setMobileMenuOpen(false) }}
+        >
           <div
             className="absolute inset-0 bg-black/50 backdrop-blur-sm"
             onClick={() => setMobileMenuOpen(false)}
           />
-          <div className="relative w-[280px] h-full animate-slide-in-left">
+          <div className="relative w-[280px] max-w-[85vw] h-full animate-slide-in-left">
             <Sidebar
               userRole={userRole}
               userName={userName}
@@ -49,7 +52,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
             />
             <button
               onClick={() => setMobileMenuOpen(false)}
-              className="absolute top-4 right-[-44px] p-2 rounded-xl bg-surface-card border border-border text-text-secondary"
+              aria-label="Закрыть меню"
+              className="absolute top-3 right-3 p-2 rounded-xl bg-surface-elevated/80 hover:bg-surface-elevated text-text-secondary border border-border"
             >
               <X className="w-5 h-5" />
             </button>

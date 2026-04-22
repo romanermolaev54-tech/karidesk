@@ -37,6 +37,7 @@ import { TICKET_STATUSES } from '@/lib/constants'
 import type { TicketStatus } from '@/types/database'
 import { compressImage } from '@/lib/image'
 import { loadStoresCached, loadCategoriesCached } from '@/lib/dictionaries'
+import toast from 'react-hot-toast'
 
 interface StoreTicketMini {
   id: string
@@ -200,29 +201,35 @@ export default function NewTicketPage() {
 
       if (error) throw error
 
-      // Upload photos
+      // Upload photos — best-effort: count failures and warn the user, but the ticket is already saved
+      let failedPhotos = 0
       if (photos.length > 0 && ticket) {
         for (const photo of photos) {
-          const ext = photo.name.split('.').pop()
+          const ext = (photo.name.split('.').pop() || 'jpg').toLowerCase()
           const path = `${ticket.id}/${crypto.randomUUID()}.${ext}`
           const { error: uploadError } = await supabase.storage
             .from('ticket-photos')
             .upload(path, photo)
 
-          if (!uploadError) {
-            const { data: urlData } = supabase.storage
-              .from('ticket-photos')
-              .getPublicUrl(path)
+          if (uploadError) { failedPhotos++; continue }
 
-            await supabase.from('ticket_photos').insert({
-              ticket_id: ticket.id,
-              storage_path: path,
-              file_url: urlData.publicUrl,
-              photo_type: 'problem',
-              uploaded_by: user.id,
-              file_size: photo.size,
-              mime_type: photo.type,
-            })
+          const { data: urlData } = supabase.storage
+            .from('ticket-photos')
+            .getPublicUrl(path)
+
+          const { error: photoInsertErr } = await supabase.from('ticket_photos').insert({
+            ticket_id: ticket.id,
+            storage_path: path,
+            file_url: urlData.publicUrl,
+            photo_type: 'problem',
+            uploaded_by: user.id,
+            file_size: photo.size,
+            mime_type: photo.type,
+          })
+          if (photoInsertErr) {
+            // remove orphan blob
+            await supabase.storage.from('ticket-photos').remove([path]).catch(() => {})
+            failedPhotos++
           }
         }
       }
@@ -232,14 +239,20 @@ export default function NewTicketPage() {
         await supabase.from('ticket_history').insert({
           ticket_id: ticket.id,
           action: 'created',
-          new_value: 'new',
+          new_value: initialStatus,
           actor_id: user.id,
         })
       }
 
+      if (failedPhotos > 0) {
+        toast.error(`Заявка создана, но ${failedPhotos} фото не загрузилось — добавьте их со страницы заявки`)
+      } else {
+        toast.success(initialStatus === 'pending_approval' ? 'Заявка отправлена на согласование ДП' : 'Заявка создана')
+      }
       router.push(`/tickets/${ticket.id}`)
     } catch (err) {
       console.error('Error creating ticket:', err)
+      toast.error('Не удалось создать заявку: ' + (err as Error).message)
     } finally {
       setLoading(false)
     }

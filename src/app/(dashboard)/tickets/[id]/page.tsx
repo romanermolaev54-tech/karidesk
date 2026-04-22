@@ -118,6 +118,13 @@ export default function TicketDetailPage() {
   }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
+    if (!photoPreview) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setPhotoPreview(null) }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [photoPreview])
+
+  useEffect(() => {
     loadTicket()
     loadMessages()
     loadPhotos()
@@ -141,21 +148,28 @@ export default function TicketDetailPage() {
   const sendMessage = async () => {
     if (!newMessage.trim() || !user) return
     setSendingMessage(true)
-    await supabase.from('ticket_messages').insert({
+    const { error } = await supabase.from('ticket_messages').insert({
       ticket_id: ticketId,
       sender_id: user.id,
       message: newMessage.trim(),
       message_type: 'comment',
     })
-    setNewMessage('')
     setSendingMessage(false)
-    loadMessages()
+    if (error) { toast.error('Не удалось отправить: ' + error.message); return }
+    setNewMessage('')
+    await loadMessages()
   }
+
+  const MAX_PHOTO_BYTES = 8 * 1024 * 1024 // 8 MB hard cap (compression should reduce most below 1 MB)
 
   const sendChatPhoto = async (rawFile: File) => {
     if (!user || !rawFile) return
     if (!rawFile.type.startsWith('image/')) {
       toast.error('Прикрепите изображение')
+      return
+    }
+    if (rawFile.size > MAX_PHOTO_BYTES) {
+      toast.error('Файл слишком большой (макс. 8 МБ)')
       return
     }
     setSendingPhoto(true)
@@ -166,7 +180,7 @@ export default function TicketDetailPage() {
       const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, file)
       if (upErr) throw upErr
       const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
-      await supabase.from('ticket_messages').insert({
+      const { error: msgErr } = await supabase.from('ticket_messages').insert({
         ticket_id: ticketId,
         sender_id: user.id,
         message: newMessage.trim() || '',
@@ -174,6 +188,7 @@ export default function TicketDetailPage() {
         attachment_url: urlData.publicUrl,
         attachment_type: 'image',
       })
+      if (msgErr) throw msgErr
       setNewMessage('')
       await loadMessages()
     } catch (e) {
@@ -186,7 +201,7 @@ export default function TicketDetailPage() {
   const assignTicket = async () => {
     if (!selectedContractor || !user) return
     setAssigning(true)
-    await supabase
+    const { error: updateErr } = await supabase
       .from('tickets')
       .update({
         assigned_to: selectedContractor,
@@ -195,6 +210,11 @@ export default function TicketDetailPage() {
         status: 'assigned',
       })
       .eq('id', ticketId)
+    if (updateErr) {
+      setAssigning(false)
+      toast.error('Не удалось назначить: ' + updateErr.message)
+      return
+    }
 
     await supabase.from('ticket_history').insert({
       ticket_id: ticketId,
@@ -207,8 +227,9 @@ export default function TicketDetailPage() {
 
     setAssigning(false)
     setShowAssignModal(false)
-    loadTicket()
-    loadHistory()
+    toast.success('Исполнитель назначен')
+    await loadTicket()
+    await loadHistory()
   }
 
   const updateStatus = async (newStatus: TicketStatus) => {
@@ -220,7 +241,11 @@ export default function TicketDetailPage() {
       updates.verified_by = user.id
     }
 
-    await supabase.from('tickets').update(updates).eq('id', ticketId)
+    const { error } = await supabase.from('tickets').update(updates).eq('id', ticketId)
+    if (error) {
+      toast.error('Не удалось изменить статус: ' + error.message)
+      return
+    }
     await supabase.from('ticket_history').insert({
       ticket_id: ticketId,
       action: 'status_changed',
@@ -228,8 +253,8 @@ export default function TicketDetailPage() {
       new_value: newStatus,
       actor_id: user.id,
     })
-    loadTicket()
-    loadHistory()
+    await loadTicket()
+    await loadHistory()
   }
 
   const completeTicket = async () => {
@@ -244,7 +269,12 @@ export default function TicketDetailPage() {
       updates.status = 'partially_completed'
       updates.partial_comment = partialComment.trim()
     }
-    await supabase.from('tickets').update(updates).eq('id', ticketId)
+    const { error } = await supabase.from('tickets').update(updates).eq('id', ticketId)
+    if (error) {
+      setCompleting(false)
+      toast.error('Не удалось завершить: ' + error.message)
+      return
+    }
     await supabase.from('ticket_history').insert({
       ticket_id: ticketId,
       action: 'status_changed',
@@ -257,8 +287,9 @@ export default function TicketDetailPage() {
     setPartialComment('')
     setCompleteMode('full')
     setCompleting(false)
-    loadTicket()
-    loadHistory()
+    toast.success(completeMode === 'partial' ? 'Заявка частично закрыта' : 'Заявка завершена')
+    await loadTicket()
+    await loadHistory()
   }
 
   const createContinuation = async () => {
@@ -364,10 +395,15 @@ export default function TicketDetailPage() {
 
   const rejectTicket = async () => {
     if (!user) return
-    await supabase
+    if (!rejectReason.trim()) { toast.error('Укажите причину'); return }
+    const { error } = await supabase
       .from('tickets')
       .update({ status: 'rejected', rejection_reason: rejectReason })
       .eq('id', ticketId)
+    if (error) {
+      toast.error('Не удалось отклонить: ' + error.message)
+      return
+    }
 
     await supabase.from('ticket_history').insert({
       ticket_id: ticketId,
@@ -377,6 +413,7 @@ export default function TicketDetailPage() {
       actor_id: user.id,
       details: { reason: rejectReason },
     })
+    toast.success('Заявка отклонена')
 
     setShowRejectModal(false)
     loadTicket()
@@ -387,27 +424,46 @@ export default function TicketDetailPage() {
     const rawFile = e.target.files?.[0]
     e.target.value = ''
     if (!rawFile || !user) return
+    if (!rawFile.type.startsWith('image/')) {
+      toast.error('Прикрепите изображение')
+      return
+    }
+    if (rawFile.size > MAX_PHOTO_BYTES) {
+      toast.error('Файл слишком большой (макс. 8 МБ)')
+      return
+    }
     setUploading(true)
 
     const file = await compressImage(rawFile).catch(() => rawFile)
     const ext = (file.name.split('.').pop() || 'jpg').toLowerCase()
     const path = `${ticketId}/${crypto.randomUUID()}.${ext}`
-    const { error } = await supabase.storage.from('ticket-photos').upload(path, file)
+    const { error: upErr } = await supabase.storage.from('ticket-photos').upload(path, file)
 
-    if (!error) {
-      const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
-      await supabase.from('ticket_photos').insert({
-        ticket_id: ticketId,
-        storage_path: path,
-        file_url: urlData.publicUrl,
-        photo_type: photoType,
-        uploaded_by: user.id,
-        file_size: file.size,
-        mime_type: file.type,
-      })
-      loadPhotos()
+    if (upErr) {
+      setUploading(false)
+      toast.error('Ошибка загрузки: ' + upErr.message)
+      return
     }
 
+    const { data: urlData } = supabase.storage.from('ticket-photos').getPublicUrl(path)
+    const { error: insErr } = await supabase.from('ticket_photos').insert({
+      ticket_id: ticketId,
+      storage_path: path,
+      file_url: urlData.publicUrl,
+      photo_type: photoType,
+      uploaded_by: user.id,
+      file_size: file.size,
+      mime_type: file.type,
+    })
+    if (insErr) {
+      // Clean up the orphaned storage object since DB row failed
+      await supabase.storage.from('ticket-photos').remove([path]).catch(() => {})
+      setUploading(false)
+      toast.error('Не удалось сохранить фото: ' + insErr.message)
+      return
+    }
+    toast.success(photoType === 'completion' ? 'Фото выполнения добавлено' : 'Акт добавлен')
+    await loadPhotos()
     setUploading(false)
   }
 

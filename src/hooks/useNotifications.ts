@@ -71,6 +71,7 @@ export function useNotifications({ userId, onNew }: Options) {
           filter: `user_id=eq.${userId}`,
         },
         payload => {
+          if (cancelled) return
           const n = payload.new as Notification
           setUnreadCount(prev => prev + 1)
           onNewRef.current?.(n)
@@ -98,6 +99,7 @@ export function useNotifications({ userId, onNew }: Options) {
           filter: `user_id=eq.${userId}`,
         },
         payload => {
+          if (cancelled) return
           const n = payload.new as Notification
           const old = payload.old as Notification
           if (!old?.is_read && n.is_read) {

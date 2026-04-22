@@ -178,11 +178,13 @@ export default function TicketsPage() {
     }))
     const { error: rtError } = await supabase.from('route_tickets').insert(rows)
     if (rtError) {
+      // Roll back the orphan route so we don't leave junk
+      await supabase.from('routes').delete().eq('id', route.id)
       toast.error('Ошибка: ' + rtError.message)
       setSavingRoute(false)
       return
     }
-    // Assign tickets to the contractor if not already
+    // Assign tickets to the contractor if not already (best-effort, errors are non-fatal here)
     await supabase
       .from('tickets')
       .update({ assigned_to: routeContractorId, status: 'assigned', assigned_at: new Date().toISOString() })
@@ -208,38 +210,20 @@ export default function TicketsPage() {
   const handleMerge = async () => {
     if (!mainTicketId) return
     setMerging(true)
-    const main = selectedTickets.find(t => t.id === mainTicketId)
     const others = selectedTickets.filter(t => t.id !== mainTicketId)
-    if (!main) { setMerging(false); return }
+    if (others.length === 0) { setMerging(false); return }
 
-    // Append others' descriptions to main
-    const appended = others
-      .map(t => `\n— [#${t.ticket_number}] ${t.description}`)
-      .join('')
-    const { error: updateMainError } = await supabase
-      .from('tickets')
-      .update({ description: main.description + '\n\n--- Объединено ---' + appended })
-      .eq('id', mainTicketId)
+    const { error } = await supabase.rpc('merge_tickets', {
+      main_id: mainTicketId,
+      other_ids: others.map(t => t.id),
+    })
 
-    if (updateMainError) {
-      toast.error('Ошибка обновления главной: ' + updateMainError.message)
-      setMerging(false)
-      return
-    }
-
-    const { error: mergeError } = await supabase
-      .from('tickets')
-      .update({ status: 'merged', merged_into_id: mainTicketId })
-      .in('id', others.map(t => t.id))
-
-    if (mergeError) {
-      toast.error('Ошибка объединения: ' + mergeError.message)
-      setMerging(false)
-      return
-    }
-
-    toast.success(`Объединено ${others.length + 1} заявок`)
     setMerging(false)
+    if (error) {
+      toast.error('Ошибка объединения: ' + error.message)
+      return
+    }
+    toast.success(`Объединено ${others.length + 1} заявок`)
     setShowMergeModal(false)
     exitSelectMode()
     loadTickets()

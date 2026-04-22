@@ -133,8 +133,8 @@ export default function SettingsPage() {
   }
 
   const handlePasswordChange = async () => {
-    if (newPassword.length < 4) {
-      toast.error('Пароль должен содержать минимум 4 символа')
+    if (newPassword.length < 6) {
+      toast.error('Пароль должен содержать минимум 6 символов')
       return
     }
     if (newPassword !== confirmPassword) {
@@ -297,7 +297,7 @@ export default function SettingsPage() {
           type="password"
           value={newPassword}
           onChange={e => setNewPassword(e.target.value)}
-          placeholder="Минимум 4 символа"
+          placeholder="Минимум 6 символов"
           autoComplete="new-password"
         />
         <Input

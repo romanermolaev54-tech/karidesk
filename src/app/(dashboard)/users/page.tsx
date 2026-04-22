@@ -122,7 +122,12 @@ export default function UsersPage() {
       phone: editPhone.trim(),
       role: editRole,
     }
-    if (editNewPassword.trim().length >= 4) payload.password = editNewPassword.trim()
+    if (editNewPassword.trim().length > 0 && editNewPassword.trim().length < 6) {
+      toast.error('Пароль должен содержать минимум 6 символов')
+      setSaving(false)
+      return
+    }
+    if (editNewPassword.trim().length >= 6) payload.password = editNewPassword.trim()
     const res = await fetch(`/api/users/${editUser.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -405,7 +410,7 @@ export default function UsersPage() {
               value={editNewPassword}
               onChange={e => setEditNewPassword(e.target.value)}
               placeholder="Оставь пустым, чтобы не менять"
-              helperText="Минимум 4 символа. После смены сообщи пароль пользователю."
+              helperText="Минимум 6 символов. После смены сообщи пароль пользователю."
             />
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setEditUser(null)} className="flex-1">Отмена</Button>

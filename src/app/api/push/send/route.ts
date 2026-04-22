@@ -28,9 +28,18 @@ interface PushSubRow {
   auth: string
 }
 
+function extractSecret(req: NextRequest): string | null {
+  const raw = req.headers.get('x-push-secret') || req.headers.get('authorization')
+  if (!raw) return null
+  return raw.replace(/^Bearer\s+/i, '').trim()
+}
+
 export async function POST(req: NextRequest) {
-  const authHeader = req.headers.get('x-push-secret') || req.headers.get('authorization')
-  if (!SEND_SECRET || authHeader !== SEND_SECRET && authHeader !== `Bearer ${SEND_SECRET}`) {
+  if (!SEND_SECRET) {
+    return NextResponse.json({ error: 'PUSH_SEND_SECRET not configured' }, { status: 500 })
+  }
+  const provided = extractSecret(req)
+  if (!provided || provided !== SEND_SECRET) {
     return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
   }
   if (!VAPID_PUBLIC || !VAPID_PRIVATE) {
