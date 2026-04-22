@@ -311,12 +311,14 @@ export default function TicketDetailPage() {
 
   const escalateTicket = async () => {
     if (!ticket || !user) return
-    setEscalating(true)
     const note = escalateNote.trim()
+    if (note.length < 10) {
+      toast.error('Опиши причину ускорения (минимум 10 символов)')
+      return
+    }
+    setEscalating(true)
     const url = `${window.location.origin}/tickets/${ticket.id}`
-    const messageText = note
-      ? `🔥 Прошу ускорить выполнение!\n${note}`
-      : `🔥 Прошу ускорить выполнение этой заявки.`
+    const messageText = `🔥 Прошу ускорить выполнение!\nПричина: ${note}`
     // 1) Drop a chat message — admins/contractor will get standard notification
     await supabase.from('ticket_messages').insert({
       ticket_id: ticket.id,
@@ -335,9 +337,7 @@ export default function TicketDetailPage() {
         user_id: a.id,
         ticket_id: ticket.id,
         title: `🔥 Просьба ускорить заявку #${ticket.ticket_number}`,
-        message: note
-          ? `${profile?.full_name || 'Магазин'}: ${note}`
-          : `${profile?.full_name || 'Магазин'}: просит ускорить выполнение`,
+        message: `${profile?.full_name || 'Магазин'}: ${note}`,
         type: 'action_required' as const,
       }))
       await supabase.from('notifications').insert(rows)
@@ -916,18 +916,30 @@ export default function TicketDetailPage() {
       <Modal isOpen={showEscalateModal} onClose={() => setShowEscalateModal(false)} title="Поторопить с заявкой">
         <div className="space-y-4">
           <p className="text-body-sm text-text-secondary">
-            Все администраторы получат моментальный пуш-сигнал «🔥 Просьба ускорить». Используй, если заявка реально срочная — повторно можно отправить через час.
+            Все администраторы получат моментальный пуш-сигнал «🔥 Просьба ускорить». Используйте только если заявка реально срочная — повторно можно отправить через час.
           </p>
-          <Textarea
-            label="Что хотите добавить (опционально)"
-            placeholder="Например: завтра приёмка от управляющей компании, без розетки магазин не откроем"
-            value={escalateNote}
-            onChange={e => setEscalateNote(e.target.value)}
-            rows={3}
-          />
+          <div>
+            <Textarea
+              label="Причина — почему нужно ускорить"
+              placeholder="Например: завтра приёмка от управляющей компании; клиенты падают в магазине; магазин не открыть без розетки"
+              value={escalateNote}
+              onChange={e => setEscalateNote(e.target.value)}
+              rows={4}
+              required
+            />
+            <p className={`text-caption mt-1 ${escalateNote.trim().length >= 10 ? 'text-text-tertiary' : 'text-amber-400'}`}>
+              Минимум 10 символов · сейчас {escalateNote.trim().length}
+            </p>
+          </div>
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setShowEscalateModal(false)} className="flex-1">Отмена</Button>
-            <Button variant="danger" onClick={escalateTicket} loading={escalating} className="flex-1">
+            <Button
+              variant="danger"
+              onClick={escalateTicket}
+              loading={escalating}
+              disabled={escalateNote.trim().length < 10}
+              className="flex-1"
+            >
               <Flame className="w-4 h-4" />
               Отправить
             </Button>
