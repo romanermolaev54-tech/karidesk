@@ -16,6 +16,47 @@ interface AuthState {
   isContractor: boolean
 }
 
+const PROFILE_CACHE_KEY = 'karidesk_profile_v1'
+const PROFILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24h — profile rarely changes
+
+interface CachedProfile {
+  ts: number
+  userId: string
+  profile: Profile
+}
+
+function readCachedProfile(userId: string): Profile | null {
+  if (typeof window === 'undefined') return null
+  try {
+    const raw = sessionStorage.getItem(PROFILE_CACHE_KEY) || localStorage.getItem(PROFILE_CACHE_KEY)
+    if (!raw) return null
+    const data = JSON.parse(raw) as CachedProfile
+    if (data.userId !== userId) return null
+    if (Date.now() - data.ts > PROFILE_CACHE_TTL_MS) return null
+    return data.profile
+  } catch {
+    return null
+  }
+}
+
+function writeCachedProfile(userId: string, profile: Profile) {
+  if (typeof window === 'undefined') return
+  try {
+    const payload: CachedProfile = { ts: Date.now(), userId, profile }
+    const json = JSON.stringify(payload)
+    sessionStorage.setItem(PROFILE_CACHE_KEY, json)
+    localStorage.setItem(PROFILE_CACHE_KEY, json)
+  } catch { /* noop */ }
+}
+
+function clearCachedProfile() {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.removeItem(PROFILE_CACHE_KEY)
+    localStorage.removeItem(PROFILE_CACHE_KEY)
+  } catch { /* noop */ }
+}
+
 export function useAuth(): AuthState {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -25,40 +66,44 @@ export function useAuth(): AuthState {
     const supabase = createClient()
     let mounted = true
 
+    // Hard safety net: never block UI more than 4s even if everything goes wrong
     const hardTimeout = setTimeout(() => {
       if (mounted) setLoading(false)
-    }, 12000)
+    }, 4000)
 
-    async function loadProfile(userId: string) {
+    async function loadProfile(userId: string, useCacheFirst: boolean) {
+      // 1. Show cached profile immediately so UI isn't blocked
+      if (useCacheFirst) {
+        const cached = readCachedProfile(userId)
+        if (cached && mounted) {
+          setProfile(cached)
+          setLoading(false)
+        }
+      }
+      // 2. Refresh from DB in the background
       try {
-        const profilePromise = supabase
+        const { data } = await supabase
           .from('profiles')
           .select('*')
           .eq('id', userId)
           .single()
-        const timeoutPromise = new Promise<{ data: null }>(resolve =>
-          setTimeout(() => resolve({ data: null }), 8000)
-        )
-        const { data } = await Promise.race([profilePromise, timeoutPromise])
-        if (mounted && data) setProfile(data)
-      } catch {
-        // ignore
-      }
+        if (mounted && data) {
+          setProfile(data)
+          writeCachedProfile(userId, data)
+        }
+      } catch { /* ignore */ }
     }
 
     async function init() {
       try {
-        const sessionPromise = supabase.auth.getSession()
-        const timeoutPromise = new Promise<{ data: { session: null } }>(resolve =>
-          setTimeout(() => resolve({ data: { session: null } }), 5000)
-        )
-        const { data: { session } } = await Promise.race([sessionPromise, timeoutPromise])
+        const { data: { session } } = await supabase.auth.getSession()
         if (!mounted) return
 
         if (session?.user) {
           setUser(session.user)
-          await loadProfile(session.user.id)
+          await loadProfile(session.user.id, true)
         } else {
+          clearCachedProfile()
           setUser(null)
           setProfile(null)
         }
@@ -78,8 +123,9 @@ export function useAuth(): AuthState {
       const currentUser = session?.user ?? null
       setUser(currentUser)
       if (currentUser) {
-        await loadProfile(currentUser.id)
+        await loadProfile(currentUser.id, false)
       } else {
+        clearCachedProfile()
         setProfile(null)
       }
       if (mounted) setLoading(false)

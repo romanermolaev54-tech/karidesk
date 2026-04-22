@@ -9,6 +9,7 @@ import Image from 'next/image'
 import Link from 'next/link'
 import toast from 'react-hot-toast'
 import { Search } from 'lucide-react'
+import { loadStoresCached } from '@/lib/dictionaries'
 
 interface StoreOption {
   id: string
@@ -30,23 +31,26 @@ export default function RegisterPage() {
   const router = useRouter()
 
   useEffect(() => {
+    let cancelled = false
     const supabase = createClient()
-    supabase
-      .from('stores')
-      .select('id, store_number, name, city, division_id')
-      .eq('is_active', true)
-      .order('store_number')
-      .then(({ data }) => { if (data) setStores(data as StoreOption[]) })
+    ;(async () => {
+      const cached = await loadStoresCached(fresh => {
+        if (!cancelled) setStores(fresh as unknown as StoreOption[])
+      })
+      if (!cancelled && cached.length) setStores(cached as unknown as StoreOption[])
+    })()
     supabase
       .from('app_settings')
       .select('value')
       .eq('key', 'registration_mode')
       .single()
       .then(({ data }) => {
+        if (cancelled) return
         if (data && typeof data.value === 'string') {
           setRegMode(data.value === 'moderation' ? 'moderation' : 'open')
         }
       })
+    return () => { cancelled = true }
   }, [])
 
   const filteredStores = useMemo(() => {

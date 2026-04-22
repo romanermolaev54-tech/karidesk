@@ -36,6 +36,7 @@ import { formatTicketNumber, formatRelative } from '@/lib/utils'
 import { TICKET_STATUSES } from '@/lib/constants'
 import type { TicketStatus } from '@/types/database'
 import { compressImage } from '@/lib/image'
+import { loadStoresCached, loadCategoriesCached } from '@/lib/dictionaries'
 
 interface StoreTicketMini {
   id: string
@@ -75,18 +76,21 @@ export default function NewTicketPage() {
   const [storeHistoryLoading, setStoreHistoryLoading] = useState(false)
   const [storeHistoryOpen, setStoreHistoryOpen] = useState(false)
 
-  // Load stores and categories
+  // Load stores and categories — cached, then refreshed in background
   useEffect(() => {
-    async function load() {
-      const [storesRes, catsRes] = await Promise.all([
-        supabase.from('stores').select('*, division:divisions(*)').eq('is_active', true).order('store_number'),
-        supabase.from('ticket_categories').select('*').eq('is_active', true).order('sort_order'),
+    let cancelled = false
+    ;(async () => {
+      const [cachedStores, cachedCats] = await Promise.all([
+        loadStoresCached(fresh => { if (!cancelled) setStores(fresh) }),
+        loadCategoriesCached(fresh => { if (!cancelled) setCategories(fresh) }),
       ])
-      if (storesRes.data) setStores(storesRes.data)
-      if (catsRes.data) setCategories(catsRes.data)
-    }
-    load()
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+      if (!cancelled) {
+        if (cachedStores.length) setStores(cachedStores)
+        if (cachedCats.length) setCategories(cachedCats)
+      }
+    })()
+    return () => { cancelled = true }
+  }, [])
 
   // Set contact phone from profile
   useEffect(() => {
