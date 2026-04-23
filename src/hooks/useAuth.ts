@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import type { Profile, UserRole } from '@/types/database'
-import type { User } from '@supabase/supabase-js'
+import type { User, Session } from '@supabase/supabase-js'
 
 interface AuthState {
   user: User | null
@@ -17,7 +17,7 @@ interface AuthState {
 }
 
 const PROFILE_CACHE_KEY = 'karidesk_profile_v1'
-const PROFILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000 // 24h — profile rarely changes
+const PROFILE_CACHE_TTL_MS = 24 * 60 * 60 * 1000
 
 interface CachedProfile {
   ts: number
@@ -34,9 +34,7 @@ function readCachedProfile(userId: string): Profile | null {
     if (data.userId !== userId) return null
     if (Date.now() - data.ts > PROFILE_CACHE_TTL_MS) return null
     return data.profile
-  } catch {
-    return null
-  }
+  } catch { return null }
 }
 
 function writeCachedProfile(userId: string, profile: Profile) {
@@ -57,6 +55,14 @@ function clearCachedProfile() {
   } catch { /* noop */ }
 }
 
+// Wrap any promise so it can never hang the UI.
+function withTimeout<T>(p: Promise<T>, ms: number, fallback: T): Promise<T> {
+  return new Promise<T>(resolve => {
+    const t = setTimeout(() => resolve(fallback), ms)
+    p.then(v => { clearTimeout(t); resolve(v) }).catch(() => { clearTimeout(t); resolve(fallback) })
+  })
+}
+
 export function useAuth(): AuthState {
   const [user, setUser] = useState<User | null>(null)
   const [profile, setProfile] = useState<Profile | null>(null)
@@ -66,13 +72,12 @@ export function useAuth(): AuthState {
     const supabase = createClient()
     let mounted = true
 
-    // Hard safety net: never block UI more than 2.5s even if everything goes wrong
+    // Hard safety net — UI is unblocked at most after 2.5 s
     const hardTimeout = setTimeout(() => {
       if (mounted) setLoading(false)
     }, 2500)
 
     async function loadProfile(userId: string, useCacheFirst: boolean): Promise<void> {
-      // 1. Show cached profile immediately so UI isn't blocked
       if (useCacheFirst) {
         const cached = readCachedProfile(userId)
         if (cached && mounted) {
@@ -80,21 +85,21 @@ export function useAuth(): AuthState {
           setLoading(false)
         }
       }
-      // 2. Fetch from DB. Retry once after a short delay in case of a transient error.
-      const fetchOnce = async () => {
+      const fetchOnce = async (): Promise<Profile | null> => {
         try {
           const { data } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', userId)
             .single()
-          return data
+          return (data as Profile | null) ?? null
         } catch { return null }
       }
-      let data = await fetchOnce()
+      // 2 s timeout per fetch, retry once
+      let data = await withTimeout(fetchOnce(), 2000, null)
       if (!data) {
-        await new Promise(r => setTimeout(r, 600))
-        data = await fetchOnce()
+        await new Promise(r => setTimeout(r, 400))
+        data = await withTimeout(fetchOnce(), 2000, null)
       }
       if (mounted && data) {
         setProfile(data)
@@ -104,7 +109,14 @@ export function useAuth(): AuthState {
 
     async function init() {
       try {
-        const { data: { session } } = await supabase.auth.getSession()
+        // Critical: getSession() can hang on flaky mobile networks / iOS Safari.
+        // Hard-cap it to 1.5 s — if no answer, treat as logged out.
+        const result = await withTimeout(
+          supabase.auth.getSession(),
+          1500,
+          { data: { session: null as Session | null } } as { data: { session: Session | null } },
+        )
+        const session = result.data.session
         if (!mounted) return
 
         if (session?.user) {
