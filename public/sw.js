@@ -1,12 +1,20 @@
-// KariDesk service worker — Web Push handler
-const CACHE_NAME = 'karidesk-v1'
+// KariDesk service worker — Web Push only (no fetch caching to avoid stale assets)
+const SW_VERSION = '2026-04-23-v3'
 
-self.addEventListener('install', event => {
+self.addEventListener('install', () => {
+  // Take over immediately so users get the new version on next reload
   self.skipWaiting()
 })
 
 self.addEventListener('activate', event => {
-  event.waitUntil(self.clients.claim())
+  event.waitUntil((async () => {
+    // Clean up any caches a previous version of this SW may have created
+    if (typeof caches !== 'undefined' && caches.keys) {
+      const keys = await caches.keys()
+      await Promise.all(keys.map(k => caches.delete(k)))
+    }
+    await self.clients.claim()
+  })())
 })
 
 self.addEventListener('push', event => {
@@ -47,4 +55,11 @@ self.addEventListener('notificationclick', event => {
       await self.clients.openWindow(url)
     }
   })())
+})
+
+// Help debugging which version is live
+self.addEventListener('message', event => {
+  if (event.data === 'sw-version') {
+    event.source && event.source.postMessage({ version: SW_VERSION })
+  }
 })
