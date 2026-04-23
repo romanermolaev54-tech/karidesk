@@ -10,6 +10,9 @@ import { NextResponse, type NextRequest } from 'next/server'
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
 
+  // /reset is the safety-net page: never block it
+  if (path.startsWith('/reset')) return NextResponse.next()
+
   const isAuthPage = path.startsWith('/login') || path.startsWith('/register')
   const isProtected = (
     path.startsWith('/dashboard') ||
