@@ -60,6 +60,8 @@ export function useNotifications({ userId, onNew }: Options) {
     }
     loadInitialCount()
 
+    let channelClosed = false
+    let wsTimeout: ReturnType<typeof setTimeout> | null = null
     const channel = supabase
       .channel(`notifications:${userId}`)
       .on(
@@ -107,11 +109,24 @@ export function useNotifications({ userId, onNew }: Options) {
           }
         }
       )
-      .subscribe()
+      .subscribe(status => {
+        if (status === 'SUBSCRIBED' && wsTimeout) { clearTimeout(wsTimeout); wsTimeout = null }
+      })
+
+    // Safety: if realtime subscription doesn't establish within 5 s (e.g. flaky network
+    // or Supabase WS hiccup) — drop it. Notifications still arrive via push + on next
+    // page load via polling. This prevents UI freezes from a hanging WS handshake.
+    wsTimeout = setTimeout(() => {
+      if (!cancelled && !channelClosed) {
+        channelClosed = true
+        try { supabase.removeChannel(channel) } catch { /* noop */ }
+      }
+    }, 5000)
 
     return () => {
       cancelled = true
-      supabase.removeChannel(channel)
+      if (wsTimeout) clearTimeout(wsTimeout)
+      try { supabase.removeChannel(channel) } catch { /* noop */ }
     }
   }, [userId])
 

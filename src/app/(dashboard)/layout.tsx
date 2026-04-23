@@ -16,10 +16,19 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-surface flex items-center justify-center">
-        <div className="flex flex-col items-center gap-4">
+      <div className="min-h-screen bg-surface flex items-center justify-center p-4">
+        <div className="flex flex-col items-center gap-4 max-w-xs w-full">
           <div className="w-10 h-10 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
-          <p className="text-body-sm text-text-secondary">Загрузка...</p>
+          <p className="text-body-sm text-text-secondary">Загрузка…</p>
+          <p className="text-caption text-text-tertiary text-center">
+            Если зависло на этом экране дольше 10 секунд —
+          </p>
+          <a
+            href="/reset"
+            className="text-caption font-semibold text-accent hover:underline"
+          >
+            Сбросить сессию и войти заново →
+          </a>
         </div>
       </div>
     )
