@@ -1,61 +1,48 @@
-import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 
+// Lightweight middleware:
+// - For protected pages: checks ONLY for the presence of a Supabase session cookie.
+//   We do NOT call supabase.auth.getUser() here — that's a network round-trip on every
+//   single navigation and was the main source of "stuck" loading on flaky mobile networks.
+// - Token validity is checked client-side by useAuth on the actual page render.
+//   If the cookie is invalid, useAuth signs out and redirects.
+// - Auth pages (/login, /register) redirect to /dashboard if cookie is present.
 export async function middleware(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({ request })
+  const path = request.nextUrl.pathname
 
-  if (!process.env.NEXT_PUBLIC_SUPABASE_URL || !process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY) {
-    return supabaseResponse
-  }
-
-  const supabase = createServerClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-    {
-      cookies: {
-        getAll() {
-          return request.cookies.getAll()
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value }) =>
-            request.cookies.set(name, value)
-          )
-          supabaseResponse = NextResponse.next({ request })
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          )
-        },
-      },
-    }
+  const isAuthPage = path.startsWith('/login') || path.startsWith('/register')
+  const isProtected = (
+    path.startsWith('/dashboard') ||
+    path.startsWith('/tickets') ||
+    path.startsWith('/my-tickets') ||
+    path.startsWith('/work') ||
+    path.startsWith('/expenses') ||
+    path.startsWith('/reports') ||
+    path.startsWith('/stores') ||
+    path.startsWith('/notifications') ||
+    path.startsWith('/admin') ||
+    path.startsWith('/settings') ||
+    path.startsWith('/users') ||
+    path.startsWith('/approvals')
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
+  if (!isAuthPage && !isProtected) return NextResponse.next()
 
-  const isAuthPage = request.nextUrl.pathname.startsWith('/login') || request.nextUrl.pathname.startsWith('/register')
-  const isDashboardPage = request.nextUrl.pathname.startsWith('/dashboard') ||
-    request.nextUrl.pathname.startsWith('/tickets') ||
-    request.nextUrl.pathname.startsWith('/my-tickets') ||
-    request.nextUrl.pathname.startsWith('/work') ||
-    request.nextUrl.pathname.startsWith('/expenses') ||
-    request.nextUrl.pathname.startsWith('/reports') ||
-    request.nextUrl.pathname.startsWith('/stores') ||
-    request.nextUrl.pathname.startsWith('/notifications') ||
-    request.nextUrl.pathname.startsWith('/admin') ||
-    request.nextUrl.pathname.startsWith('/settings')
+  // Supabase ssr stores access tokens in cookies prefixed with "sb-"
+  const cookies = request.cookies.getAll()
+  const hasSession = cookies.some(c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token'))
 
-  if (!user && isDashboardPage) {
+  if (isProtected && !hasSession) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
-
-  if (user && isAuthPage) {
+  if (isAuthPage && hasSession) {
     const url = request.nextUrl.clone()
     url.pathname = '/dashboard'
     return NextResponse.redirect(url)
   }
-
-  return supabaseResponse
+  return NextResponse.next()
 }
 
 export const config = {

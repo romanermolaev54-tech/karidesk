@@ -66,10 +66,10 @@ export function useAuth(): AuthState {
     const supabase = createClient()
     let mounted = true
 
-    // Hard safety net: never block UI more than 4s even if everything goes wrong
+    // Hard safety net: never block UI more than 2.5s even if everything goes wrong
     const hardTimeout = setTimeout(() => {
       if (mounted) setLoading(false)
-    }, 4000)
+    }, 2500)
 
     async function loadProfile(userId: string, useCacheFirst: boolean): Promise<void> {
       // 1. Show cached profile immediately so UI isn't blocked
