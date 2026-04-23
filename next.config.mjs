@@ -6,6 +6,20 @@ const nextConfig = {
   async headers() {
     return [
       {
+        // Hashed static assets — cache forever, content is immutable
+        source: '/_next/static/:path*',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=31536000, immutable' },
+        ],
+      },
+      {
+        // Logo PNGs / icons — cache for a week
+        source: '/:file(logo-.*\\..*|icons/.*)',
+        headers: [
+          { key: 'Cache-Control', value: 'public, max-age=604800' },
+        ],
+      },
+      {
         source: '/sw.js',
         headers: [
           { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
@@ -19,7 +33,6 @@ const nextConfig = {
         ],
       },
       {
-        // All non-static routes (HTML pages) — never cache the document itself
         source: '/((?!_next/static|_next/image|icons/|logo-).*)',
         headers: [
           { key: 'Cache-Control', value: 'no-cache, no-store, must-revalidate' },
