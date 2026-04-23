@@ -125,7 +125,9 @@ export default function DashboardPage() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-heading-1 text-text-primary">
-            Привет, {profile?.full_name?.split(' ')[0] || 'Пользователь'}!
+            {profile?.full_name
+              ? `Привет, ${profile.full_name.split(' ')[0]}!`
+              : 'Привет!'}
           </h1>
           <p className="text-body text-text-secondary mt-1">
             Обзор заявок и активности
@@ -154,9 +156,11 @@ export default function DashboardPage() {
                 <stat.icon className={`w-5 h-5 ${stat.color}`} />
               </div>
             </div>
-            <p className="text-heading-1 text-text-primary">
-              {loading ? '—' : stat.value}
-            </p>
+            {loading ? (
+              <div className="h-9 w-12 rounded-md bg-surface-elevated/50 animate-pulse" />
+            ) : (
+              <p className="text-heading-1 text-text-primary">{stat.value}</p>
+            )}
             <p className="text-body-sm text-text-secondary mt-1">{stat.label}</p>
           </Link>
         ))}

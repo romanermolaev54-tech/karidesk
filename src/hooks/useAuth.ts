@@ -71,7 +71,7 @@ export function useAuth(): AuthState {
       if (mounted) setLoading(false)
     }, 4000)
 
-    async function loadProfile(userId: string, useCacheFirst: boolean) {
+    async function loadProfile(userId: string, useCacheFirst: boolean): Promise<void> {
       // 1. Show cached profile immediately so UI isn't blocked
       if (useCacheFirst) {
         const cached = readCachedProfile(userId)
@@ -80,18 +80,26 @@ export function useAuth(): AuthState {
           setLoading(false)
         }
       }
-      // 2. Refresh from DB in the background
-      try {
-        const { data } = await supabase
-          .from('profiles')
-          .select('*')
-          .eq('id', userId)
-          .single()
-        if (mounted && data) {
-          setProfile(data)
-          writeCachedProfile(userId, data)
-        }
-      } catch { /* ignore */ }
+      // 2. Fetch from DB. Retry once after a short delay in case of a transient error.
+      const fetchOnce = async () => {
+        try {
+          const { data } = await supabase
+            .from('profiles')
+            .select('*')
+            .eq('id', userId)
+            .single()
+          return data
+        } catch { return null }
+      }
+      let data = await fetchOnce()
+      if (!data) {
+        await new Promise(r => setTimeout(r, 600))
+        data = await fetchOnce()
+      }
+      if (mounted && data) {
+        setProfile(data)
+        writeCachedProfile(userId, data)
+      }
     }
 
     async function init() {
