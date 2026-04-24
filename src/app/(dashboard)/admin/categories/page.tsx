@@ -17,6 +17,8 @@ interface Category {
   sort_order: number
   is_active: boolean
   default_deadline_hours: number | null
+  hint: string | null
+  external_url: string | null
 }
 
 export default function CategoriesPage() {
@@ -28,6 +30,8 @@ export default function CategoriesPage() {
   const [editName, setEditName] = useState('')
   const [editColor, setEditColor] = useState('')
   const [editDeadline, setEditDeadline] = useState('')
+  const [editHint, setEditHint] = useState('')
+  const [editUrl, setEditUrl] = useState('')
   const [saving, setSaving] = useState(false)
   const [isNew, setIsNew] = useState(false)
 
@@ -44,6 +48,8 @@ export default function CategoriesPage() {
     setEditName(cat.name)
     setEditColor(cat.color || '')
     setEditDeadline(cat.default_deadline_hours?.toString() || '')
+    setEditHint(cat.hint || '')
+    setEditUrl(cat.external_url || '')
     setIsNew(false)
   }
 
@@ -52,29 +58,32 @@ export default function CategoriesPage() {
     setEditName('')
     setEditColor('#64748B')
     setEditDeadline('')
+    setEditHint('')
+    setEditUrl('')
     setIsNew(true)
   }
 
   const handleSave = async () => {
     setSaving(true)
+    const payload = {
+      name: editName,
+      color: editColor || null,
+      default_deadline_hours: editDeadline ? parseInt(editDeadline) : null,
+      hint: editHint.trim() || null,
+      external_url: editUrl.trim() || null,
+    }
     if (isNew) {
       const { data, error } = await supabase.from('ticket_categories').insert({
-        name: editName,
-        color: editColor || null,
-        default_deadline_hours: editDeadline ? parseInt(editDeadline) : null,
+        ...payload,
         sort_order: categories.length + 1,
       }).select().single()
       if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
       if (data) setCategories(prev => [...prev, data])
       toast.success('Категория добавлена')
     } else if (editCat?.id) {
-      const { error } = await supabase.from('ticket_categories').update({
-        name: editName,
-        color: editColor || null,
-        default_deadline_hours: editDeadline ? parseInt(editDeadline) : null,
-      }).eq('id', editCat.id)
+      const { error } = await supabase.from('ticket_categories').update(payload).eq('id', editCat.id)
       if (error) { toast.error('Ошибка: ' + error.message); setSaving(false); return }
-      setCategories(prev => prev.map(c => c.id === editCat.id ? { ...c, name: editName, color: editColor, default_deadline_hours: editDeadline ? parseInt(editDeadline) : null } : c))
+      setCategories(prev => prev.map(c => c.id === editCat.id ? { ...c, ...payload } : c))
       toast.success('Сохранено')
     }
     setEditCat(null)
@@ -138,6 +147,30 @@ export default function CategoriesPage() {
           <Input label="Название" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Сантехника" />
           <Input label="Цвет (HEX)" value={editColor} onChange={e => setEditColor(e.target.value)} placeholder="#34D399" />
           <Input label="Дедлайн (часы)" type="number" value={editDeadline} onChange={e => setEditDeadline(e.target.value)} placeholder="48" />
+
+          <div className="border-t border-border pt-4 space-y-4">
+            <p className="text-caption text-text-tertiary">
+              Подсказка показывается магазину сразу после выбора этой категории на шаге создания заявки. Можно дать совет, ссылку на каталог или предупреждение.
+            </p>
+            <div>
+              <label className="block text-body-sm font-medium text-text-secondary mb-2">Подсказка для магазина</label>
+              <textarea
+                value={editHint}
+                onChange={e => setEditHint(e.target.value)}
+                rows={3}
+                placeholder="Например: Если знаете точно, что нужно — закажите через каталог. Это быстрее. Если не получилось — продолжайте заявку здесь."
+                className="w-full px-3 py-2 rounded-xl border border-border bg-surface-muted/30 text-text-primary placeholder:text-text-tertiary text-body-sm focus:outline-none focus:ring-2 focus:ring-accent/15 focus:border-accent/40"
+              />
+            </div>
+            <Input
+              label="Ссылка (опционально)"
+              type="url"
+              value={editUrl}
+              onChange={e => setEditUrl(e.target.value)}
+              placeholder="https://catalog.kari.com/..."
+            />
+          </div>
+
           <div className="flex gap-2">
             <Button variant="secondary" onClick={() => setEditCat(null)} className="flex-1">Отмена</Button>
             <Button onClick={handleSave} loading={saving} className="flex-1"><Save className="w-4 h-4" />Сохранить</Button>

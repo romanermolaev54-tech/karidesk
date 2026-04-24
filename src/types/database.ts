@@ -58,6 +58,8 @@ export interface TicketCategory {
   sort_order: number
   is_active: boolean
   default_deadline_hours: number | null
+  hint: string | null
+  external_url: string | null
   created_at: string
 }
 

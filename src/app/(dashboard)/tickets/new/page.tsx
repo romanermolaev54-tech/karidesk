@@ -411,32 +411,59 @@ export default function NewTicketPage() {
 
       {/* Step 2: Category Selection */}
       {step === 2 && (
-        <div className="grid grid-cols-2 gap-3 animate-fade-in">
-          {categories.map(cat => {
-            const Icon = CATEGORY_ICONS[cat.icon || 'Wrench'] || Wrench
-            const isSelected = selectedCategory?.id === cat.id
-            return (
-              <button
-                key={cat.id}
-                onClick={() => setSelectedCategory(cat)}
-                className={`p-4 rounded-xl border text-left transition-all ${
-                  isSelected
-                    ? 'border-accent/40 bg-accent/5 ring-2 ring-accent/15'
-                    : 'border-border hover:border-border-strong hover:bg-surface-elevated/20'
-                }`}
-              >
-                <div
-                  className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
-                  style={{ backgroundColor: `${cat.color}15` }}
+        <div className="space-y-4 animate-fade-in">
+          <div className="grid grid-cols-2 gap-3">
+            {categories.map(cat => {
+              const Icon = CATEGORY_ICONS[cat.icon || 'Wrench'] || Wrench
+              const isSelected = selectedCategory?.id === cat.id
+              return (
+                <button
+                  key={cat.id}
+                  onClick={() => setSelectedCategory(cat)}
+                  className={`p-4 rounded-xl border text-left transition-all ${
+                    isSelected
+                      ? 'border-accent/40 bg-accent/5 ring-2 ring-accent/15'
+                      : 'border-border hover:border-border-strong hover:bg-surface-elevated/20'
+                  }`}
                 >
-                  <Icon className="w-5 h-5" style={{ color: cat.color || undefined }} />
-                </div>
-                <p className={`text-body-sm font-medium ${isSelected ? 'text-text-primary' : 'text-text-secondary'}`}>
-                  {cat.name}
+                  <div
+                    className="w-10 h-10 rounded-xl flex items-center justify-center mb-3"
+                    style={{ backgroundColor: `${cat.color}15` }}
+                  >
+                    <Icon className="w-5 h-5" style={{ color: cat.color || undefined }} />
+                  </div>
+                  <p className={`text-body-sm font-medium ${isSelected ? 'text-text-primary' : 'text-text-secondary'}`}>
+                    {cat.name}
+                  </p>
+                </button>
+              )
+            })}
+          </div>
+
+          {/* Hint + external link for the selected category */}
+          {selectedCategory && (selectedCategory.hint || selectedCategory.external_url) && (
+            <div className="card-premium p-4 border-l-4 border-l-accent space-y-3 animate-fade-in">
+              {selectedCategory.hint && (
+                <p className="text-body-sm text-text-primary whitespace-pre-wrap">
+                  {selectedCategory.hint}
                 </p>
-              </button>
-            )
-          })}
+              )}
+              {selectedCategory.external_url && (
+                <a
+                  href={selectedCategory.external_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-2 px-4 py-2 rounded-lg gradient-accent text-white text-body-sm font-semibold hover:opacity-90"
+                >
+                  Перейти в каталог
+                  <ArrowRight className="w-4 h-4" />
+                </a>
+              )}
+              <p className="text-caption text-text-tertiary">
+                Если по ссылке не получилось — продолжайте заявку дальше.
+              </p>
+            </div>
+          )}
         </div>
       )}
 
