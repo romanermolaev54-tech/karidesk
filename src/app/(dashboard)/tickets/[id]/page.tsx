@@ -1013,32 +1013,94 @@ export default function TicketDetailPage() {
         <div className="space-y-4">
           <p className="text-body-sm text-text-secondary">Укажите, как была выполнена заявка. Выезд исполнителя попадает в отчёт в обоих случаях.</p>
 
-          {/* Required photos checklist */}
-          <div className={`rounded-xl border p-3 space-y-2 ${
-            photosOk ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-400/30 bg-amber-400/5'
-          }`}>
+          {/* Required photos — load right here */}
+          <div className="space-y-3">
             <p className="text-caption font-semibold text-text-primary">Обязательные вложения</p>
-            <div className="flex items-center gap-2 text-caption">
-              {completionPhotos > 0
-                ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                : <XCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />}
-              <span className="text-text-secondary">
-                Фото выполнения работ {completionPhotos > 0 ? `(${completionPhotos})` : '— не приложено'}
-              </span>
+
+            {/* Completion photos block */}
+            <div className={`rounded-xl border p-3 space-y-2 ${
+              completionPhotos > 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-400/30 bg-amber-400/5'
+            }`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-body-sm">
+                  {completionPhotos > 0
+                    ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    : <XCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />}
+                  <span className="text-text-primary">
+                    Фото выполнения {completionPhotos > 0 && `(${completionPhotos})`}
+                  </span>
+                </div>
+                <label className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-elevated/60 hover:bg-surface-elevated text-caption text-text-primary">
+                  {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                  Добавить
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={e => handlePhotoUpload(e, 'completion')}
+                  />
+                </label>
+              </div>
+              {photos.filter(p => p.photo_type === 'completion').length > 0 && (
+                <div className="grid grid-cols-4 gap-1.5 mt-2">
+                  {photos.filter(p => p.photo_type === 'completion').map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setPhotoPreview(p.file_url)}
+                      className="aspect-square rounded-lg overflow-hidden border border-border"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.file_url || ''} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            <div className="flex items-center gap-2 text-caption">
-              {actPhotos > 0
-                ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                : <XCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />}
-              <span className="text-text-secondary">
-                Акт выполненных работ {actPhotos > 0 ? `(${actPhotos})` : '— не приложен'}
-              </span>
+
+            {/* Act photos block */}
+            <div className={`rounded-xl border p-3 space-y-2 ${
+              actPhotos > 0 ? 'border-emerald-500/30 bg-emerald-500/5' : 'border-amber-400/30 bg-amber-400/5'
+            }`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-body-sm">
+                  {actPhotos > 0
+                    ? <CheckCircle className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    : <XCircle className="w-4 h-4 text-amber-400 flex-shrink-0" />}
+                  <span className="text-text-primary">
+                    Акт выполненных работ {actPhotos > 0 && `(${actPhotos})`}
+                  </span>
+                </div>
+                <label className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-elevated/60 hover:bg-surface-elevated text-caption text-text-primary">
+                  {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
+                  Добавить
+                  <input
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    disabled={uploading}
+                    onChange={e => handlePhotoUpload(e, 'act')}
+                  />
+                </label>
+              </div>
+              {photos.filter(p => p.photo_type === 'act').length > 0 && (
+                <div className="grid grid-cols-4 gap-1.5 mt-2">
+                  {photos.filter(p => p.photo_type === 'act').map(p => (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => setPhotoPreview(p.file_url)}
+                      className="aspect-square rounded-lg overflow-hidden border border-border"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={p.file_url || ''} alt="" className="w-full h-full object-cover" />
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-            {!photosOk && (
-              <p className="text-caption text-amber-400 mt-1">
-                Закройте окно, перейдите во вкладку «Фото» и приложите недостающее, прежде чем завершать.
-              </p>
-            )}
           </div>
 
           <div className="space-y-2">
