@@ -43,9 +43,16 @@ export function EnablePushBanner() {
 
       const perm = getPushPermission()
       if (perm === 'granted') {
-        // Permission granted; check we actually have a subscription
+        // Permission already granted earlier — if subscription was somehow lost
+        // (e.g. SW reset between deploys), silently re-subscribe in the
+        // background so the user doesn't see the banner again.
         const sub = await isSubscribed()
-        if (!sub) setState({ kind: 'enable' })
+        if (!sub) {
+          const res = await subscribeToPush()
+          // If silent re-subscribe failed for any reason, fall back to showing
+          // the banner so the user can retry manually.
+          if (!res.ok) setState({ kind: 'enable' })
+        }
         return
       }
       if (perm === 'denied') return // user explicitly blocked, don't nag
