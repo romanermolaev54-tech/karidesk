@@ -2,7 +2,7 @@
 
 import { useEffect } from 'react'
 
-const EXPECTED_SW_VERSION = '2026-04-23-v3'
+const EXPECTED_SW_VERSION = '2026-04-27-v4'
 
 /**
  * Asks the active service worker for its version. If it doesn't respond or returns

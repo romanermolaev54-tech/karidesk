@@ -229,14 +229,21 @@ export default function TicketsPage() {
     loadTickets()
   }
 
+  // In selectMode (merge / route building) only active tickets make sense —
+  // hide closed/rejected/merged so admin can't accidentally bundle a finished ticket.
+  const ACTIVE_FOR_SELECT: TicketStatus[] = ['new', 'pending_approval', 'assigned', 'in_progress', 'info_requested']
+  const sourceTickets = selectMode
+    ? tickets.filter(t => ACTIVE_FOR_SELECT.includes(t.status))
+    : tickets
+
   const filtered = search.trim()
-    ? tickets.filter(t =>
+    ? sourceTickets.filter(t =>
         t.ticket_number?.toString().includes(search) ||
         t.description.toLowerCase().includes(search.toLowerCase()) ||
         t.store?.name?.toLowerCase().includes(search.toLowerCase()) ||
         t.store?.store_number?.includes(search)
       )
-    : tickets
+    : sourceTickets
 
   const statusCounts = tickets.reduce((acc, t) => {
     acc[t.status] = (acc[t.status] || 0) + 1

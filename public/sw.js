@@ -1,5 +1,5 @@
 // KariDesk service worker — Web Push only (no fetch caching to avoid stale assets)
-const SW_VERSION = '2026-04-23-v3'
+const SW_VERSION = '2026-04-27-v4'
 
 self.addEventListener('install', () => {
   // Take over immediately so users get the new version on next reload

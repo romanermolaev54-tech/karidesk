@@ -68,6 +68,9 @@ export default function TicketDetailPage() {
   const [completing, setCompleting] = useState(false)
   const [creatingContinuation, setCreatingContinuation] = useState(false)
   const [sendingPhoto, setSendingPhoto] = useState(false)
+  const [adminComment, setAdminComment] = useState('')
+  const [adminCommentEditing, setAdminCommentEditing] = useState(false)
+  const [adminCommentSaving, setAdminCommentSaving] = useState(false)
   const [showEscalateModal, setShowEscalateModal] = useState(false)
   const [escalateNote, setEscalateNote] = useState('')
   const [escalating, setEscalating] = useState(false)
@@ -116,6 +119,26 @@ export default function TicketDetailPage() {
       .order('created_at', { ascending: false })
     if (data) setHistory(data)
   }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (ticket?.admin_comment !== undefined && !adminCommentEditing) {
+      setAdminComment(ticket.admin_comment || '')
+    }
+  }, [ticket?.admin_comment, adminCommentEditing])
+
+  const saveAdminComment = async () => {
+    setAdminCommentSaving(true)
+    const value = adminComment.trim() || null
+    const { error } = await supabase
+      .from('tickets')
+      .update({ admin_comment: value })
+      .eq('id', ticketId)
+    setAdminCommentSaving(false)
+    if (error) { toast.error('Не сохранилось: ' + error.message); return }
+    setAdminCommentEditing(false)
+    toast.success('Комментарий сохранён')
+    await loadTicket()
+  }
 
   useEffect(() => {
     if (!photoPreview) return
@@ -743,6 +766,45 @@ export default function TicketDetailPage() {
                 <p className="text-caption text-red-400 font-medium">Причина отклонения</p>
               </div>
               <p className="text-body-sm text-text-primary">{ticket.rejection_reason}</p>
+            </div>
+          )}
+
+          {/* Admin / director comment (editable) */}
+          {(isAdmin || isDirector) && (
+            <div className="border-t border-border pt-4">
+              <div className="flex items-center justify-between gap-2 mb-2">
+                <p className="text-caption text-text-tertiary font-medium">Комментарий администратора</p>
+                {!adminCommentEditing && (
+                  <button
+                    onClick={() => setAdminCommentEditing(true)}
+                    className="text-caption text-accent hover:underline"
+                  >
+                    {ticket.admin_comment ? 'Изменить' : 'Добавить'}
+                  </button>
+                )}
+              </div>
+              {adminCommentEditing ? (
+                <div className="space-y-2">
+                  <Textarea
+                    value={adminComment}
+                    onChange={e => setAdminComment(e.target.value)}
+                    rows={3}
+                    placeholder="Внутренняя заметка по заявке (видна только admin/ДП)"
+                  />
+                  <div className="flex gap-2">
+                    <Button size="sm" variant="secondary" onClick={() => { setAdminCommentEditing(false); setAdminComment(ticket.admin_comment || '') }} className="flex-1">
+                      Отмена
+                    </Button>
+                    <Button size="sm" onClick={saveAdminComment} loading={adminCommentSaving} className="flex-1">
+                      Сохранить
+                    </Button>
+                  </div>
+                </div>
+              ) : ticket.admin_comment ? (
+                <p className="text-body-sm text-text-primary whitespace-pre-wrap">{ticket.admin_comment}</p>
+              ) : (
+                <p className="text-caption text-text-tertiary italic">Комментария нет</p>
+              )}
             </div>
           )}
         </div>

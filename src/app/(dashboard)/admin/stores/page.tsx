@@ -11,6 +11,7 @@ import { Badge } from '@/components/ui/Badge'
 import type { Division } from '@/types/database'
 import { Shield, Edit3, Save, Plus, Store, Search, MapPin } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { invalidateDictionaries } from '@/lib/dictionaries'
 
 interface StoreItem {
   id: string
@@ -89,6 +90,7 @@ export default function AdminStoresPage() {
     }
     setEditStore(null)
     setSaving(false)
+    invalidateDictionaries()
   }
 
   const filtered = stores.filter(s => {

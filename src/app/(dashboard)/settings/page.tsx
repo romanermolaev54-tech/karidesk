@@ -313,6 +313,22 @@ export default function SettingsPage() {
         </Button>
       </div>
 
+      {/* Maintenance — refresh app cache */}
+      <div className="card-premium p-5 space-y-3">
+        <h2 className="text-heading-3 text-text-primary">Обновить приложение</h2>
+        <p className="text-body-sm text-text-secondary">
+          Если что-то отображается не свежее или приложение «зависло» — обновите кеш.
+          Не сбрасывает ни ваш аккаунт, ни данные.
+        </p>
+        <Button
+          variant="secondary"
+          onClick={() => { window.location.href = '/reset' }}
+          className="w-full"
+        >
+          Обновить кеш и перезайти
+        </Button>
+      </div>
+
       {/* Logout */}
       <div className="card-premium p-5">
         <Button variant="danger" onClick={handleLogout} className="w-full">

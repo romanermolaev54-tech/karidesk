@@ -9,6 +9,7 @@ import { Modal } from '@/components/ui/Modal'
 import type { Division } from '@/types/database'
 import { Shield, Edit3, Save, Plus, Building2, Gavel } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { invalidateDictionaries } from '@/lib/dictionaries'
 
 export default function DivisionsPage() {
   const { isAdmin } = useAuth()
@@ -75,6 +76,7 @@ export default function DivisionsPage() {
     }
     setEditDiv(null)
     setSaving(false)
+    invalidateDictionaries()
   }
 
   if (!isAdmin) {

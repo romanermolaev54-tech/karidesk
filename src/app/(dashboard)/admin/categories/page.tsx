@@ -8,6 +8,7 @@ import { Input } from '@/components/ui/Input'
 import { Modal } from '@/components/ui/Modal'
 import { Shield, Edit3, Save, Plus, Tags } from 'lucide-react'
 import toast from 'react-hot-toast'
+import { invalidateDictionaries } from '@/lib/dictionaries'
 
 interface Category {
   id: string
@@ -88,6 +89,7 @@ export default function CategoriesPage() {
     }
     setEditCat(null)
     setSaving(false)
+    invalidateDictionaries() // so /tickets/new picks up the new hint/URL on next load
   }
 
   if (!isAdmin) {
