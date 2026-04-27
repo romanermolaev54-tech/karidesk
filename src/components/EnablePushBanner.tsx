@@ -6,6 +6,7 @@ import {
   isPushSupported,
   getPushPermission,
   subscribeToPush,
+  syncLocalSubscription,
   isIos,
   isStandalone,
 } from '@/lib/push'
@@ -55,14 +56,12 @@ export function EnablePushBanner() {
 
       // Most reliable signal of "user already subscribed": an active
       // PushSubscription on this device. Trust this over Notification.permission,
-      // which is racy on iOS standalone PWA.
-      try {
-        const reg = await navigator.serviceWorker.getRegistration('/sw.js')
-        if (reg) {
-          const sub = await reg.pushManager.getSubscription()
-          if (sub) return // already subscribed → never show banner
-        }
-      } catch { /* noop */ }
+      // which is racy on iOS standalone PWA. Also self-heal the DB row in case
+      // the original /api/push/subscribe POST failed silently (SW race, auth
+      // cookie not ready, network blip) — so users who clicked "Включить" but
+      // never actually got registered server-side recover automatically.
+      const hasLocal = await syncLocalSubscription()
+      if (hasLocal) return // already subscribed → never show banner
 
       const perm = getPushPermission()
       if (perm === 'granted') {

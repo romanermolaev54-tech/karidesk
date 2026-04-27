@@ -22,9 +22,22 @@ export function getPushPermission(): NotificationPermission | 'unsupported' {
 export async function registerServiceWorker(): Promise<ServiceWorkerRegistration | null> {
   if (!('serviceWorker' in navigator)) return null
   try {
-    const existing = await navigator.serviceWorker.getRegistration('/sw.js')
-    if (existing) return existing
-    return await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    let registration = await navigator.serviceWorker.getRegistration('/sw.js')
+    if (!registration) {
+      registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' })
+    }
+    // Wait for SW to reach 'active' state before returning. pushManager.subscribe()
+    // requires an active worker — if we return while the SW is still 'installing',
+    // the caller hits "Subscription failed - no active Service Worker" on iOS.
+    if (!registration.active) {
+      try {
+        await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise((_, reject) => setTimeout(() => reject(new Error('sw-ready-timeout')), 5000)),
+        ])
+      } catch { /* timeout — return whatever we have */ }
+    }
+    return registration
   } catch {
     return null
   }
@@ -70,20 +83,32 @@ export async function subscribeToPush(): Promise<{ ok: boolean; reason?: string 
   const auth = json.keys?.auth
   if (!endpoint || !p256dh || !auth) return { ok: false, reason: 'Неверный формат подписки' }
 
-  const res = await fetch('/api/push/subscribe', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      endpoint,
-      keys: { p256dh, auth },
-      user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
-    }),
+  // Retry the POST up to 3 times with backoff. On iOS PWA the auth cookie
+  // can briefly be unavailable on initial load and the server returns 401,
+  // making first attempts fail even though the user is logged in. Retrying
+  // catches that, plus transient network blips.
+  const body = JSON.stringify({
+    endpoint,
+    keys: { p256dh, auth },
+    user_agent: typeof navigator !== 'undefined' ? navigator.userAgent : null,
   })
-  if (!res.ok) {
-    const text = await res.text().catch(() => '')
-    return { ok: false, reason: `Ошибка сохранения: ${text || res.status}` }
+  let lastErr = ''
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt > 0) await new Promise(r => setTimeout(r, 600 * attempt))
+    try {
+      const res = await fetch('/api/push/subscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body,
+        credentials: 'include',
+      })
+      if (res.ok) return { ok: true }
+      lastErr = `${res.status} ${await res.text().catch(() => '')}`
+    } catch (e) {
+      lastErr = (e as Error).message
+    }
   }
-  return { ok: true }
+  return { ok: false, reason: `Ошибка сохранения: ${lastErr}` }
 }
 
 export async function unsubscribeFromPush(): Promise<{ ok: boolean; reason?: string }> {
@@ -104,6 +129,49 @@ export async function isSubscribed(): Promise<boolean> {
   if (!reg) return false
   const sub = await reg.pushManager.getSubscription()
   return !!sub
+}
+
+/**
+ * Self-heal: if the device already has a local PushSubscription, re-POST it
+ * to /api/push/subscribe. Idempotent (server upserts on endpoint), so safe
+ * to call on every app launch. Recovers users whose original subscribe POST
+ * failed silently — for example because the SW was still installing, the
+ * auth cookie hadn't fully attached yet, or the network blipped.
+ *
+ * Returns true if a subscription was found locally (regardless of POST
+ * outcome), false if there's nothing to sync.
+ */
+export async function syncLocalSubscription(): Promise<boolean> {
+  if (!isPushSupported()) return false
+  try {
+    const reg = await navigator.serviceWorker.getRegistration('/sw.js')
+    if (!reg) return false
+    const sub = await reg.pushManager.getSubscription()
+    if (!sub) return false
+    const json = sub.toJSON() as { endpoint?: string; keys?: { p256dh?: string; auth?: string } }
+    if (!json.endpoint || !json.keys?.p256dh || !json.keys?.auth) return false
+    const body = JSON.stringify({
+      endpoint: json.endpoint,
+      keys: { p256dh: json.keys.p256dh, auth: json.keys.auth },
+      user_agent: navigator.userAgent,
+    })
+    // Best-effort: try a couple of times, but never throw — caller doesn't care.
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt > 0) await new Promise(r => setTimeout(r, 600))
+      try {
+        const res = await fetch('/api/push/subscribe', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body,
+          credentials: 'include',
+        })
+        if (res.ok) break
+      } catch { /* swallow */ }
+    }
+    return true
+  } catch {
+    return false
+  }
 }
 
 export function isIos(): boolean {
