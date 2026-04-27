@@ -650,11 +650,11 @@ export default function TicketDetailPage() {
               <Camera className="w-4 h-4" />
               Фото
             </Button>
+            {/* No capture attr → iOS shows native picker with Take Photo + Photo Library options */}
             <input
               type="file"
               accept="image/*"
               className="hidden"
-              capture="environment"
               onChange={e => handlePhotoUpload(e, 'completion')}
             />
           </label>
@@ -945,11 +945,11 @@ export default function TicketDetailPage() {
                   {uploading ? <Loader2 className="w-4 h-4 mx-auto mb-1 text-text-tertiary animate-spin" /> : <Upload className="w-4 h-4 mx-auto mb-1 text-text-tertiary" />}
                   <p className="text-caption text-text-tertiary">Фото выполнения</p>
                 </div>
+                {/* No capture attr → iOS shows native picker with Take Photo + Photo Library options */}
                 <input
                   type="file"
                   accept="image/*"
                   className="hidden"
-                  capture="environment"
                   onChange={e => handlePhotoUpload(e, 'completion')}
                 />
               </label>
@@ -1092,18 +1092,31 @@ export default function TicketDetailPage() {
                     Фото выполнения {completionPhotos > 0 && `(${completionPhotos})`}
                   </span>
                 </div>
-                <label className="cursor-pointer flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-surface-elevated/60 hover:bg-surface-elevated text-caption text-text-primary">
-                  {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
-                  Добавить
-                  <input
-                    type="file"
-                    accept="image/*"
-                    capture="environment"
-                    className="hidden"
-                    disabled={uploading}
-                    onChange={e => handlePhotoUpload(e, 'completion')}
-                  />
-                </label>
+                <div className="flex items-center gap-1.5 flex-shrink-0">
+                  <label className="cursor-pointer flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-elevated/60 hover:bg-surface-elevated text-caption text-text-primary">
+                    {uploading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Camera className="w-3.5 h-3.5" />}
+                    Снять
+                    <input
+                      type="file"
+                      accept="image/*"
+                      capture="environment"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={e => handlePhotoUpload(e, 'completion')}
+                    />
+                  </label>
+                  <label className="cursor-pointer flex items-center gap-1 px-2 py-1 rounded-lg bg-surface-elevated/60 hover:bg-surface-elevated text-caption text-text-primary">
+                    <Image className="w-3.5 h-3.5" />
+                    Галерея
+                    <input
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      disabled={uploading}
+                      onChange={e => handlePhotoUpload(e, 'completion')}
+                    />
+                  </label>
+                </div>
               </div>
               {photos.filter(p => p.photo_type === 'completion').length > 0 && (
                 <div className="grid grid-cols-4 gap-1.5 mt-2">
