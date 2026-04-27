@@ -1,50 +1,29 @@
 import { NextResponse, type NextRequest } from 'next/server'
 
-// Lightweight middleware:
-// - For protected pages: checks ONLY for the presence of a Supabase session cookie.
-//   We do NOT call supabase.auth.getUser() here — that's a network round-trip on every
-//   single navigation and was the main source of "stuck" loading on flaky mobile networks.
-// - Token validity is checked client-side by useAuth on the actual page render.
-//   If the cookie is invalid, useAuth signs out and redirects.
-// - Auth pages (/login, /register) redirect to /dashboard if cookie is present.
+// Tiny middleware: only handles the /reset escape hatch and a "logged-in user
+// shouldn't see /login again" convenience redirect. Real auth checks happen
+// on the client in useAuth — this avoids a known iOS PWA cookie race where
+// the browser hasn't persisted the session cookie yet when middleware fires.
 export async function middleware(request: NextRequest) {
   const path = request.nextUrl.pathname
 
   // /reset is the safety-net page: never block it
   if (path.startsWith('/reset')) return NextResponse.next()
 
-  const isAuthPage = path.startsWith('/login') || path.startsWith('/register')
-  const isProtected = (
-    path.startsWith('/dashboard') ||
-    path.startsWith('/tickets') ||
-    path.startsWith('/my-tickets') ||
-    path.startsWith('/work') ||
-    path.startsWith('/expenses') ||
-    path.startsWith('/reports') ||
-    path.startsWith('/stores') ||
-    path.startsWith('/notifications') ||
-    path.startsWith('/admin') ||
-    path.startsWith('/settings') ||
-    path.startsWith('/users') ||
-    path.startsWith('/approvals')
-  )
-
-  if (!isAuthPage && !isProtected) return NextResponse.next()
-
-  // Supabase ssr stores access tokens in cookies prefixed with "sb-"
-  const cookies = request.cookies.getAll()
-  const hasSession = cookies.some(c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token'))
-
-  if (isProtected && !hasSession) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/login'
-    return NextResponse.redirect(url)
+  // If user already has a session cookie and visits /login or /register,
+  // bounce them to /dashboard. (Failure mode here is harmless — they'll
+  // just see the auth form, which is fine.)
+  const isAuthPage = path === '/login' || path === '/register'
+  if (isAuthPage) {
+    const cookies = request.cookies.getAll()
+    const hasSession = cookies.some(c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token'))
+    if (hasSession) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
   }
-  if (isAuthPage && hasSession) {
-    const url = request.nextUrl.clone()
-    url.pathname = '/dashboard'
-    return NextResponse.redirect(url)
-  }
+
   return NextResponse.next()
 }
 

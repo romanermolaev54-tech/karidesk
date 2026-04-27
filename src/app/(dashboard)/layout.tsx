@@ -6,13 +6,24 @@ import { MobileNavbar } from '@/components/layout/MobileNavbar'
 import { EnablePushBanner } from '@/components/EnablePushBanner'
 import { useAuth } from '@/hooks/useAuth'
 import { useNotifications } from '@/hooks/useNotifications'
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useRouter } from 'next/navigation'
 import { X } from 'lucide-react'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const { user, profile, role, loading } = useAuth()
+  const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { unreadCount } = useNotifications({ userId: user?.id || null })
+
+  // Client-side auth gate. We can't rely on middleware alone — on iOS Safari
+  // standalone PWAs, session cookies sometimes haven't propagated yet when
+  // middleware fires after login, which kicks the user back to /login.
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace('/login')
+    }
+  }, [loading, user, router])
 
   if (loading) {
     return (
