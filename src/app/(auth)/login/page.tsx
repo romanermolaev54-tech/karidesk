@@ -61,22 +61,19 @@ export default function LoginPage() {
       }
     }
 
-    // Make sure the session cookie is actually persisted before navigating.
-    // On iOS Safari standalone PWAs there is a small race where the cookie
-    // hasn't been written yet when the next page is requested → middleware
-    // doesn't see it → user is bounced back to /login.
-    let sessionReady = false
-    for (let i = 0; i < 8 && !sessionReady; i++) {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (session?.access_token) sessionReady = true
-      else await new Promise(r => setTimeout(r, 150))
-    }
-
     toast.success('Добро пожаловать!')
-    // Soft navigation first — middleware now allows /dashboard regardless of cookie,
-    // and the client useAuth gate will re-check.
-    router.refresh()
-    setTimeout(() => { window.location.href = '/dashboard' }, 100)
+    // Soft navigation: keeps the singleton Supabase client in memory with the
+    // freshly created session. Hard reload (window.location.href) would lose
+    // it on iOS standalone PWAs where the next page can't read back the cookie
+    // immediately, sending the user back here.
+    router.push('/dashboard')
+    // Safety: if soft nav didn't kick in (e.g. browser blocked it), force a
+    // hard reload after 1.5 s. By then session is definitely persisted.
+    setTimeout(() => {
+      if (window.location.pathname.includes('/login')) {
+        window.location.href = '/dashboard'
+      }
+    }, 1500)
   }
 
   return (
