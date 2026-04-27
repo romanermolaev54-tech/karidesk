@@ -2,57 +2,66 @@
 
 import { useEffect } from 'react'
 
-const EXPECTED_SW_VERSION = '2026-04-27-v4'
+const CLIENT_BUILD_ID = process.env.NEXT_PUBLIC_BUILD_ID || ''
+const CHECK_INTERVAL_MS = 5 * 60 * 1000 // re-check every 5 min while app is open
+const RELOAD_FLAG = 'karidesk_build_reloaded_for'
 
 /**
- * Asks the active service worker for its version. If it doesn't respond or returns
- * an older version, we unregister it and reload — this clears stale clients that
- * are stuck on a previous deploy and makes the app responsive again.
+ * Auto-updater that works WITHOUT a service worker.
+ * Fetches /api/version from the server and compares it to the build ID
+ * that was baked into the client bundle. If they differ, the user has stale
+ * JS — reload the page once to pick up the new bundle.
+ *
+ * Also cleans up old service workers if any are registered (legacy behaviour).
  */
 export function SwUpdater() {
   useEffect(() => {
-    if (typeof window === 'undefined' || !('serviceWorker' in navigator)) return
+    if (typeof window === 'undefined') return
     let cancelled = false
 
-    const run = async () => {
+    const checkVersion = async () => {
+      if (!CLIENT_BUILD_ID) return
       try {
-        const reg = await navigator.serviceWorker.getRegistration('/sw.js')
-        if (!reg) return // nothing registered → fresh install
-        // Make sure SW gets fresh script next time
-        try { await reg.update() } catch { /* noop */ }
-
-        // Ask the active SW for its version
-        const ctrl = navigator.serviceWorker.controller
-        if (!ctrl) return
-
-        const version = await new Promise<string | null>(resolve => {
-          const channel = new MessageChannel()
-          const timeout = setTimeout(() => resolve(null), 1500)
-          channel.port1.onmessage = e => {
-            clearTimeout(timeout)
-            resolve(e.data?.version || null)
-          }
-          try { ctrl.postMessage('sw-version', [channel.port2]) }
-          catch { resolve(null) }
-        })
-
+        const r = await fetch('/api/version', { cache: 'no-store' })
+        if (!r.ok) return
+        const { buildId } = await r.json() as { buildId: string }
         if (cancelled) return
-        if (version !== EXPECTED_SW_VERSION) {
-          // Outdated SW — drop it and reload to pick up the new one
-          try { await reg.unregister() } catch { /* noop */ }
-          // Avoid reload loops
-          const flag = sessionStorage.getItem('karidesk_sw_reloaded')
-          if (!flag) {
-            sessionStorage.setItem('karidesk_sw_reloaded', '1')
-            window.location.reload()
-          }
-        } else {
-          sessionStorage.removeItem('karidesk_sw_reloaded')
+        if (buildId && buildId !== CLIENT_BUILD_ID) {
+          // Avoid reload loops — remember which build we already reloaded for
+          let lastReloadFor = ''
+          try { lastReloadFor = sessionStorage.getItem(RELOAD_FLAG) || '' } catch { /* noop */ }
+          if (lastReloadFor === buildId) return
+          try { sessionStorage.setItem(RELOAD_FLAG, buildId) } catch { /* noop */ }
+          // Clean stale SW caches first
+          try {
+            if ('serviceWorker' in navigator) {
+              const regs = await navigator.serviceWorker.getRegistrations()
+              for (const reg of regs) try { await reg.unregister() } catch { /* noop */ }
+            }
+            if ('caches' in window) {
+              const keys = await caches.keys()
+              await Promise.all(keys.map(k => caches.delete(k)))
+            }
+          } catch { /* noop */ }
+          window.location.reload()
         }
-      } catch { /* noop */ }
+      } catch { /* network error — try again next interval */ }
     }
-    run()
-    return () => { cancelled = true }
+
+    // First check immediately, then on a timer + when tab regains focus
+    checkVersion()
+    const intervalId = setInterval(checkVersion, CHECK_INTERVAL_MS)
+    const onFocus = () => { checkVersion() }
+    window.addEventListener('focus', onFocus)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) checkVersion()
+    })
+
+    return () => {
+      cancelled = true
+      clearInterval(intervalId)
+      window.removeEventListener('focus', onFocus)
+    }
   }, [])
 
   return null

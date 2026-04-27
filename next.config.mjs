@@ -1,5 +1,10 @@
+const BUILD_ID = String(Date.now())
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  // Stable build-id reference for client-side version checks
+  env: { NEXT_PUBLIC_BUILD_ID: BUILD_ID },
+  generateBuildId: async () => BUILD_ID,
   // HTML pages and the service worker should never be cached by the browser —
   // otherwise users hit "Failed to find Server Action" after we deploy a new build.
   // Hashed JS/CSS chunks under /_next/static are still safe to cache forever.
