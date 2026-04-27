@@ -30,6 +30,8 @@ import {
   Clock,
   ChevronDown,
   ChevronUp,
+  Sparkles,
+  Loader2,
 } from 'lucide-react'
 import Link from 'next/link'
 import { formatTicketNumber, formatRelative } from '@/lib/utils'
@@ -76,6 +78,17 @@ export default function NewTicketPage() {
   const [storeHistory, setStoreHistory] = useState<StoreTicketMini[]>([])
   const [storeHistoryLoading, setStoreHistoryLoading] = useState(false)
   const [storeHistoryOpen, setStoreHistoryOpen] = useState(false)
+
+  // AI description-quality check (DeepSeek, debounced).
+  // Stays optional and silent: if it fails, the form just doesn't show hints.
+  const [aiResult, setAiResult] = useState<{
+    ok: boolean
+    missing: string[]
+    suggest_photo: boolean
+    photo_reason: string | null
+  } | null>(null)
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiDismissed, setAiDismissed] = useState(false)
 
   // Load stores and categories — cached, then refreshed in background
   useEffect(() => {
@@ -154,6 +167,57 @@ export default function NewTicketPage() {
     setPhotos(prev => prev.filter((_, i) => i !== index))
     setPhotoPreviews(prev => prev.filter((_, i) => i !== index))
   }, [])
+
+  // Debounced AI description check.
+  // Fires 1.5s after the user stops typing, only on step 3 (where the
+  // description textarea actually exists), only when there's a category
+  // selected (we send it to the model for context), and only when the input
+  // is meaningful (>= 10 chars). All AI errors are swallowed silently — the
+  // form keeps working exactly as before.
+  useEffect(() => {
+    if (step !== 3) return
+    if (aiDismissed) return
+    const trimmed = description.trim()
+    if (trimmed.length < 10 || !selectedCategory) {
+      setAiResult(null)
+      setAiLoading(false)
+      return
+    }
+
+    const ctrl = new AbortController()
+    const timer = setTimeout(async () => {
+      setAiLoading(true)
+      try {
+        const res = await fetch('/api/ai/check-description', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          signal: ctrl.signal,
+          body: JSON.stringify({
+            category_name: selectedCategory.name,
+            description: trimmed,
+            has_photos: photos.length > 0,
+          }),
+        })
+        if (!res.ok) { setAiResult(null); return }
+        const data = await res.json() as {
+          result?: { ok: boolean; missing: string[]; suggest_photo: boolean; photo_reason: string | null }
+          skipped?: boolean
+        }
+        if (data.skipped || !data.result) { setAiResult(null); return }
+        setAiResult(data.result)
+      } catch {
+        setAiResult(null)
+      } finally {
+        setAiLoading(false)
+      }
+    }, 1500)
+
+    return () => {
+      clearTimeout(timer)
+      ctrl.abort()
+    }
+  }, [step, description, selectedCategory, photos.length, aiDismissed])
 
   const canGoNext = () => {
     switch (step) {
@@ -481,10 +545,63 @@ export default function NewTicketPage() {
             label="Опишите проблему"
             placeholder="Подробно опишите, что случилось и что нужно сделать..."
             value={description}
-            onChange={e => setDescription(e.target.value)}
+            onChange={e => { setDescription(e.target.value); setAiDismissed(false) }}
             rows={4}
             error={description.length > 0 && description.length < 5 ? 'Минимум 5 символов' : undefined}
           />
+
+          {/* AI hint: shown after user pauses typing. Non-blocking — user can
+              ignore and submit anyway. */}
+          {!aiDismissed && (aiLoading || aiResult) && description.trim().length >= 10 && (
+            <div className="rounded-xl border border-violet-500/30 bg-violet-500/5 p-3">
+              <div className="flex items-start gap-2">
+                <div className="p-1.5 rounded-lg bg-violet-500/15 flex-shrink-0">
+                  {aiLoading
+                    ? <Loader2 className="w-3.5 h-3.5 text-violet-400 animate-spin" />
+                    : <Sparkles className="w-3.5 h-3.5 text-violet-400" />}
+                </div>
+                <div className="flex-1 min-w-0">
+                  {aiLoading && (
+                    <p className="text-caption text-text-secondary">AI проверяет описание…</p>
+                  )}
+                  {!aiLoading && aiResult && aiResult.ok && !aiResult.suggest_photo && (
+                    <p className="text-caption text-emerald-400">Описание полное — подрядчик возьмёт без уточнений</p>
+                  )}
+                  {!aiLoading && aiResult && (!aiResult.ok || aiResult.suggest_photo) && (
+                    <>
+                      <p className="text-caption font-semibold text-text-primary mb-1.5">
+                        Уточните, чтобы заявку взяли быстрее:
+                      </p>
+                      {aiResult.missing.length > 0 && (
+                        <ul className="space-y-1 mb-1.5">
+                          {aiResult.missing.map((m, i) => (
+                            <li key={i} className="text-caption text-text-secondary flex gap-1.5">
+                              <span className="text-violet-400 flex-shrink-0">•</span>
+                              <span>{m}</span>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                      {aiResult.suggest_photo && photos.length === 0 && (
+                        <p className="text-caption text-text-secondary flex gap-1.5">
+                          <Camera className="w-3.5 h-3.5 text-violet-400 flex-shrink-0 mt-0.5" />
+                          <span>{aiResult.photo_reason || 'Желательно приложить фото'}</span>
+                        </p>
+                      )}
+                    </>
+                  )}
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setAiDismissed(true)}
+                  className="p-1 rounded-lg text-text-tertiary hover:text-text-primary hover:bg-surface-elevated/40 transition-colors flex-shrink-0"
+                  title="Скрыть подсказку"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          )}
 
           <Input
             label="Контактный телефон"
