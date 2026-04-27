@@ -20,6 +20,10 @@ const RELOAD_FLAG = 'karidesk_build_reloaded_for'
 export function SwUpdater() {
   useEffect(() => {
     if (typeof window === 'undefined') return
+    // Never run version-checks on the emergency reset page or the login flow —
+    // they need to render a stable, predictable UI without surprise reloads.
+    const path = window.location.pathname
+    if (path.startsWith('/reset') || path.startsWith('/login')) return
     let cancelled = false
 
     const refreshSwScript = async () => {
