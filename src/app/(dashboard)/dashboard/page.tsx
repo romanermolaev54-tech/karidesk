@@ -36,48 +36,56 @@ export default function DashboardPage() {
   async function loadData() {
     if (!user) return
 
-    // Load recent tickets
-    let query = supabase
+    // Build all 5 queries up front, then fire them in parallel. Previously this
+    // ran sequentially (recent tickets → then counts), which doubled the
+    // perceived load time on every dashboard render. The counts query also
+    // pulled every ticket row just to count statuses in JS — now we use HEAD
+    // requests with count=exact, so PostgREST returns just a number.
+    //
+    // Same role-scope is applied to each query. RLS already enforces this on
+    // the server (since the 2026-04-27 tighten_rls migration); the client
+    // filter still helps PostgREST pick the right index.
+    let recent = supabase
       .from('tickets')
-      .select(`
-        *,
-        store:stores(id, store_number, name),
-        category:ticket_categories(id, name, color)
-      `)
+      .select('*, store:stores(id, store_number, name), category:ticket_categories(id, name, color)')
       .order('created_at', { ascending: false })
       .limit(5)
+    let cNew      = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('status', 'new')
+    let cInProg   = supabase.from('tickets').select('id', { count: 'exact', head: true }).in('status', ['assigned', 'in_progress'])
+    let cDone     = supabase.from('tickets').select('id', { count: 'exact', head: true }).in('status', ['completed', 'verified'])
+    let cUrgent   = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('priority', 'urgent')
 
     if (role === 'employee') {
-      query = query.eq('created_by', user.id)
+      recent = recent.eq('created_by', user.id)
+      cNew = cNew.eq('created_by', user.id)
+      cInProg = cInProg.eq('created_by', user.id)
+      cDone = cDone.eq('created_by', user.id)
+      cUrgent = cUrgent.eq('created_by', user.id)
     } else if (role === 'contractor') {
-      query = query.eq('assigned_to', user.id)
+      recent = recent.eq('assigned_to', user.id)
+      cNew = cNew.eq('assigned_to', user.id)
+      cInProg = cInProg.eq('assigned_to', user.id)
+      cDone = cDone.eq('assigned_to', user.id)
+      cUrgent = cUrgent.eq('assigned_to', user.id)
     } else if (isDirector && profile?.division_id) {
-      query = query.eq('division_id', profile.division_id)
+      recent = recent.eq('division_id', profile.division_id)
+      cNew = cNew.eq('division_id', profile.division_id)
+      cInProg = cInProg.eq('division_id', profile.division_id)
+      cDone = cDone.eq('division_id', profile.division_id)
+      cUrgent = cUrgent.eq('division_id', profile.division_id)
     }
 
-    const { data: tickets } = await query
-    setRecentTickets(tickets || [])
+    const [recentRes, newRes, inProgRes, doneRes, urgRes] = await Promise.all([
+      recent, cNew, cInProg, cDone, cUrgent,
+    ])
 
-    // Load counts
-    let countQuery = supabase.from('tickets').select('status, priority')
-    if (role === 'employee') {
-      countQuery = countQuery.eq('created_by', user.id)
-    } else if (role === 'contractor') {
-      countQuery = countQuery.eq('assigned_to', user.id)
-    } else if (isDirector && profile?.division_id) {
-      countQuery = countQuery.eq('division_id', profile.division_id)
-    }
-
-    const { data: allTickets } = await countQuery
-    if (allTickets) {
-      setCounts({
-        new: allTickets.filter(t => t.status === 'new').length,
-        in_progress: allTickets.filter(t => ['assigned', 'in_progress'].includes(t.status)).length,
-        completed: allTickets.filter(t => ['completed', 'verified'].includes(t.status)).length,
-        urgent: allTickets.filter(t => t.priority === 'urgent').length,
-      })
-    }
-
+    setRecentTickets(recentRes.data || [])
+    setCounts({
+      new: newRes.count || 0,
+      in_progress: inProgRes.count || 0,
+      completed: doneRes.count || 0,
+      urgent: urgRes.count || 0,
+    })
     setLoading(false)
   }
 

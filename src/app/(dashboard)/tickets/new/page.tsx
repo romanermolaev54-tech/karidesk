@@ -201,17 +201,22 @@ export default function NewTicketPage() {
 
       if (error) throw error
 
-      // Upload photos — best-effort: count failures and warn the user, but the ticket is already saved
+      // Upload all photos in parallel + history insert in the same Promise.all.
+      // Previously the loop awaited each upload + each insert sequentially, so
+      // 3 photos took 3-9s end-to-end on Russia↔Frankfurt latency. Doing them
+      // concurrently brings it down to roughly the slowest single upload.
+      // Best-effort: count failures and warn the user, but the ticket is
+      // already saved — they can re-add the missing photos from the ticket
+      // page.
       let failedPhotos = 0
-      if (photos.length > 0 && ticket) {
-        for (const photo of photos) {
+      if (ticket) {
+        const uploadOne = async (photo: File): Promise<void> => {
           const ext = (photo.name.split('.').pop() || 'jpg').toLowerCase()
           const path = `${ticket.id}/${crypto.randomUUID()}.${ext}`
           const { error: uploadError } = await supabase.storage
             .from('ticket-photos')
             .upload(path, photo)
-
-          if (uploadError) { failedPhotos++; continue }
+          if (uploadError) { failedPhotos++; return }
 
           const { data: urlData } = supabase.storage
             .from('ticket-photos')
@@ -232,16 +237,18 @@ export default function NewTicketPage() {
             failedPhotos++
           }
         }
-      }
 
-      // Add history entry
-      if (ticket) {
-        await supabase.from('ticket_history').insert({
-          ticket_id: ticket.id,
-          action: 'created',
-          new_value: initialStatus,
-          actor_id: user.id,
-        })
+        await Promise.all([
+          ...photos.map(uploadOne),
+          // History insert runs in parallel with photo uploads — they don't
+          // depend on each other.
+          supabase.from('ticket_history').insert({
+            ticket_id: ticket.id,
+            action: 'created',
+            new_value: initialStatus,
+            actor_id: user.id,
+          }),
+        ])
       }
 
       if (failedPhotos > 0) {
