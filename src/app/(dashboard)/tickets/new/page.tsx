@@ -194,6 +194,7 @@ export default function NewTicketPage() {
           credentials: 'include',
           signal: ctrl.signal,
           body: JSON.stringify({
+            category_id: selectedCategory.id,
             category_name: selectedCategory.name,
             description: trimmed,
             has_photos: photos.length > 0,

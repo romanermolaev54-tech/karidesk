@@ -20,6 +20,7 @@ interface Category {
   default_deadline_hours: number | null
   hint: string | null
   external_url: string | null
+  ai_hint: string | null
 }
 
 export default function CategoriesPage() {
@@ -33,6 +34,7 @@ export default function CategoriesPage() {
   const [editDeadline, setEditDeadline] = useState('')
   const [editHint, setEditHint] = useState('')
   const [editUrl, setEditUrl] = useState('')
+  const [editAiHint, setEditAiHint] = useState('')
   const [saving, setSaving] = useState(false)
   const [isNew, setIsNew] = useState(false)
 
@@ -51,6 +53,7 @@ export default function CategoriesPage() {
     setEditDeadline(cat.default_deadline_hours?.toString() || '')
     setEditHint(cat.hint || '')
     setEditUrl(cat.external_url || '')
+    setEditAiHint(cat.ai_hint || '')
     setIsNew(false)
   }
 
@@ -61,6 +64,7 @@ export default function CategoriesPage() {
     setEditDeadline('')
     setEditHint('')
     setEditUrl('')
+    setEditAiHint('')
     setIsNew(true)
   }
 
@@ -72,6 +76,7 @@ export default function CategoriesPage() {
       default_deadline_hours: editDeadline ? parseInt(editDeadline) : null,
       hint: editHint.trim() || null,
       external_url: editUrl.trim() || null,
+      ai_hint: editAiHint.trim() || null,
     }
     if (isNew) {
       const { data, error } = await supabase.from('ticket_categories').insert({
@@ -171,6 +176,32 @@ export default function CategoriesPage() {
               onChange={e => setEditUrl(e.target.value)}
               placeholder="https://catalog.kari.com/..."
             />
+          </div>
+
+          <div className="border-t border-border pt-4 space-y-4">
+            <div>
+              <p className="text-caption font-semibold text-violet-400 mb-1">✨ Контекст для AI-проверки описания</p>
+              <p className="text-caption text-text-tertiary">
+                AI читает это перед проверкой описания, чтобы задавать уточняющие вопросы по специфике Kari.
+                Магазины это не видят. Перечислите типичные характеристики, которые подрядчику нужны для оценки —
+                AI сам сообразит, чего не хватает в описании.
+              </p>
+            </div>
+            <div>
+              <label className="block text-body-sm font-medium text-text-secondary mb-2">AI-подсказка (только для модели)</label>
+              <textarea
+                value={editAiHint}
+                onChange={e => setEditAiHint(e.target.value)}
+                rows={5}
+                placeholder="Например для Электрики:
+В Kari используются: LED-панели в торговом зале, трековое освещение над стеллажами, спотовое в примерочных, витринное в окнах, прикассовое.
+Спрашивай:
+• Какой тип светильника (LED-панель / трековое / спот / витринное / прикассовое)
+• Где именно (торговый зал / примерочная №X / витрина / касса №X / склад)
+• Как проявляется (мерцает / не включается совсем / выбивает автомат / горит вполнакала)"
+                className="w-full px-3 py-2 rounded-xl border border-violet-500/30 bg-violet-500/5 text-text-primary placeholder:text-text-tertiary text-body-sm focus:outline-none focus:ring-2 focus:ring-violet-500/20 focus:border-violet-500/50 font-mono text-caption leading-relaxed"
+              />
+            </div>
           </div>
 
           <div className="flex gap-2">
