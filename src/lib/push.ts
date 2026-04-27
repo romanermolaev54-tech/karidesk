@@ -36,7 +36,14 @@ export async function subscribeToPush(): Promise<{ ok: boolean; reason?: string 
   const vapid = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY
   if (!vapid) return { ok: false, reason: 'VAPID ключ не настроен' }
 
-  const permission = await Notification.requestPermission()
+  // If permission is already granted, don't call requestPermission again.
+  // On iOS PWA, calling requestPermission without a user gesture can return
+  // 'default' even when the user previously granted permission, causing a
+  // false "Разрешение не предоставлено" failure on silent re-subscribe.
+  let permission: NotificationPermission = Notification.permission
+  if (permission !== 'granted') {
+    permission = await Notification.requestPermission()
+  }
   if (permission !== 'granted') {
     return { ok: false, reason: permission === 'denied' ? 'Разрешение отклонено' : 'Разрешение не предоставлено' }
   }

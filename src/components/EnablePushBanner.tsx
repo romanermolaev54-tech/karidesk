@@ -6,7 +6,6 @@ import {
   isPushSupported,
   getPushPermission,
   subscribeToPush,
-  isSubscribed,
   isIos,
   isStandalone,
 } from '@/lib/push'
@@ -41,18 +40,37 @@ export function EnablePushBanner() {
 
       if (!isPushSupported()) return
 
+      // Wait for Service Worker to settle. On iOS PWA, on initial load
+      // navigator.serviceWorker.getRegistration() can return null for a few
+      // hundred ms even if the SW was registered in a previous session, and
+      // Notification.permission can briefly report 'default' instead of
+      // 'granted'. Awaiting `ready` (with a timeout fallback) gives iOS the
+      // chance to attach the existing SW before we check anything.
+      try {
+        await Promise.race([
+          navigator.serviceWorker.ready,
+          new Promise(resolve => setTimeout(resolve, 1500)),
+        ])
+      } catch { /* noop */ }
+
+      // Most reliable signal of "user already subscribed": an active
+      // PushSubscription on this device. Trust this over Notification.permission,
+      // which is racy on iOS standalone PWA.
+      try {
+        const reg = await navigator.serviceWorker.getRegistration('/sw.js')
+        if (reg) {
+          const sub = await reg.pushManager.getSubscription()
+          if (sub) return // already subscribed → never show banner
+        }
+      } catch { /* noop */ }
+
       const perm = getPushPermission()
       if (perm === 'granted') {
-        // Permission already granted earlier — if subscription was somehow lost
-        // (e.g. SW reset between deploys), silently re-subscribe in the
-        // background so the user doesn't see the banner again.
-        const sub = await isSubscribed()
-        if (!sub) {
-          const res = await subscribeToPush()
-          // If silent re-subscribe failed for any reason, fall back to showing
-          // the banner so the user can retry manually.
-          if (!res.ok) setState({ kind: 'enable' })
-        }
+        // Permission granted but no PushSubscription on this device — silently
+        // re-subscribe in the background. If it fails, fall back to the banner
+        // so the user can retry manually.
+        const res = await subscribeToPush()
+        if (!res.ok) setState({ kind: 'enable' })
         return
       }
       if (perm === 'denied') return // user explicitly blocked, don't nag
