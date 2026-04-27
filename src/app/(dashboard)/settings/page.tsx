@@ -18,9 +18,24 @@ import {
   Bell,
   BellOff,
   Smartphone,
+  Send,
+  CheckCircle2,
+  XCircle,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { isPushSupported, getPushPermission, subscribeToPush, unsubscribeFromPush, isSubscribed, isIos, isStandalone } from '@/lib/push'
+
+function DiagRow({ label, ok, hint }: { label: string; ok: boolean; hint?: string }) {
+  return (
+    <div className="flex items-center gap-2">
+      {ok
+        ? <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400 flex-shrink-0" />
+        : <XCircle className="w-3.5 h-3.5 text-amber-400 flex-shrink-0" />}
+      <span className="text-text-secondary flex-1">{label}</span>
+      {hint && <span className="text-text-tertiary">{hint}</span>}
+    </div>
+  )
+}
 
 export default function SettingsPage() {
   const { user, profile, role, isDirector } = useAuth()
@@ -40,6 +55,37 @@ export default function SettingsPage() {
   const [pushState, setPushState] = useState<'unknown' | 'unsupported' | 'denied' | 'enabled' | 'disabled' | 'needs-pwa'>('unknown')
   const [pushBusy, setPushBusy] = useState(false)
   const [iosNeedsInstall, setIosNeedsInstall] = useState(false)
+  const [testSending, setTestSending] = useState(false)
+  const [diag, setDiag] = useState<{ swRegistered: boolean; permission: string; subscribed: boolean; isPwa: boolean; isIos: boolean }>({
+    swRegistered: false, permission: 'default', subscribed: false, isPwa: false, isIos: false,
+  })
+
+  useEffect(() => {
+    const refresh = async () => {
+      const swRegistered = typeof window !== 'undefined' && 'serviceWorker' in navigator
+        ? !!(await navigator.serviceWorker.getRegistration('/sw.js'))
+        : false
+      const permission = typeof window !== 'undefined' && 'Notification' in window ? Notification.permission : 'unsupported'
+      const subscribed = await isSubscribed()
+      setDiag({ swRegistered, permission, subscribed, isPwa: isStandalone(), isIos: isIos() })
+    }
+    refresh()
+  }, [pushState])
+
+  const handleTestPush = async () => {
+    setTestSending(true)
+    try {
+      const r = await fetch('/api/push/test', { method: 'POST' })
+      if (!r.ok) {
+        const t = await r.text().catch(() => '')
+        toast.error('Ошибка: ' + (t || r.status))
+        return
+      }
+      toast.success('Тест отправлен — push должен прийти за 2-3 секунды')
+    } finally {
+      setTestSending(false)
+    }
+  }
 
   useEffect(() => {
     const check = async () => {
@@ -240,11 +286,32 @@ export default function SettingsPage() {
           </Button>
         )}
         {pushState === 'enabled' && (
-          <Button variant="secondary" onClick={handleDisablePush} loading={pushBusy} className="w-full">
-            <BellOff className="w-4 h-4" />
-            Выключить push-уведомления
-          </Button>
+          <div className="space-y-2">
+            <Button onClick={handleTestPush} loading={testSending} className="w-full">
+              <Send className="w-4 h-4" />
+              Отправить тестовое уведомление
+            </Button>
+            <Button variant="secondary" onClick={handleDisablePush} loading={pushBusy} className="w-full">
+              <BellOff className="w-4 h-4" />
+              Выключить push-уведомления
+            </Button>
+          </div>
         )}
+
+        {/* Diagnostics — useful when "не приходит" чтобы понять, где затык */}
+        <details className="group">
+          <summary className="cursor-pointer text-caption text-text-tertiary hover:text-text-secondary list-none flex items-center gap-1">
+            <span className="group-open:rotate-90 transition-transform inline-block">▸</span>
+            Диагностика
+          </summary>
+          <div className="mt-2 rounded-lg border border-border bg-surface-elevated/30 p-3 space-y-1 text-caption font-mono">
+            <DiagRow label="Браузер поддерживает push" ok={isPushSupported() || !diag.isIos} />
+            <DiagRow label="Установлено как PWA" ok={diag.isPwa || !diag.isIos} hint={diag.isIos && !diag.isPwa ? 'на iPhone обязательно' : undefined} />
+            <DiagRow label="Разрешение от системы" ok={diag.permission === 'granted'} hint={diag.permission} />
+            <DiagRow label="Service Worker зарегистрирован" ok={diag.swRegistered} />
+            <DiagRow label="Подписка на push активна" ok={diag.subscribed} />
+          </div>
+        </details>
       </div>
 
       {/* Director approval toggle */}
