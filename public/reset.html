@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Сброс KariDesk</title>
+<!--
+  Static reset page. Lives in /public so it's served as a plain file,
+  never touches Next.js / React / our build pipeline. Use this URL when
+  the React /reset page fails to load (typically because the user's PWA
+  has a stuck Service Worker from an old build that prevents the JS
+  bundle from running).
+-->
+<style>
+  * { box-sizing: border-box }
+  html, body { margin: 0; padding: 0; min-height: 100vh; min-height: 100dvh; background: #0f0f1a; color: #ededf2; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; -webkit-font-smoothing: antialiased }
+  body { display: flex; align-items: center; justify-content: center; padding: 16px }
+  .card { width: 100%; max-width: 420px; padding: 24px; border: 1px solid rgba(255,255,255,.1); border-radius: 20px; background: rgba(255,255,255,.04) }
+  h1 { margin: 0 0 8px; font-size: 22px }
+  p.lead { margin: 0 0 16px; font-size: 14px; color: rgba(237,237,242,.7); line-height: 1.45 }
+  .log { padding: 12px; border: 1px solid rgba(255,255,255,.08); border-radius: 12px; background: rgba(0,0,0,.25); font-family: ui-monospace, "SF Mono", monospace; font-size: 12px; line-height: 1.6; min-height: 48px; max-height: 240px; overflow: auto }
+  .log p { margin: 0 }
+  .ok { color: #34d399 }
+  .warn { color: #f59e0b }
+  .err { color: #ef4444 }
+  .actions { margin-top: 16px; display: flex; flex-direction: column; gap: 8px }
+  a.btn { display: block; padding: 12px; text-align: center; border-radius: 12px; font-size: 14px; font-weight: 600; text-decoration: none; color: #fff; background: linear-gradient(135deg, #E91E8C, #C2185B) }
+  .hint { font-size: 12px; color: rgba(237,237,242,.5); text-align: center; margin-top: 8px }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>Сброс KariDesk</h1>
+  <p class="lead">Очищаем кэш браузера, Service Worker и сохранённую сессию. После этого войдите заново.</p>
+  <div id="log" class="log"><p>Запуск…</p></div>
+  <div class="actions" id="actions" style="display:none">
+    <a class="btn" href="/login">Перейти на вход</a>
+    <p class="hint">Если приложение было на главном экране — удалите иконку и установите заново через Safari → «Поделиться» → «На экран „Домой"».</p>
+  </div>
+</div>
+<script>
+(function () {
+  var logEl = document.getElementById('log');
+  var actionsEl = document.getElementById('actions');
+  function add(text, cls) {
+    var p = document.createElement('p');
+    if (cls) p.className = cls;
+    p.textContent = text;
+    logEl.appendChild(p);
+    logEl.scrollTop = logEl.scrollHeight;
+  }
+  // First entry replaces "Запуск…"
+  logEl.innerHTML = '';
+
+  function runStep(name, fn) {
+    return Promise.resolve()
+      .then(fn)
+      .then(function (extra) { add('✓ ' + name + (extra ? ' (' + extra + ')' : ''), 'ok'); })
+      .catch(function (e) { add('— ' + name + ': ' + (e && e.message ? e.message : 'ошибка'), 'warn'); });
+  }
+
+  function clearCookies() {
+    document.cookie.split(';').forEach(function (c) {
+      var eq = c.indexOf('=');
+      var name = (eq > -1 ? c.substring(0, eq) : c).trim();
+      if (!name) return;
+      var exp = 'Thu, 01 Jan 1970 00:00:00 GMT';
+      document.cookie = name + '=; expires=' + exp + '; path=/';
+      document.cookie = name + '=; expires=' + exp + '; path=/; domain=' + location.hostname;
+      document.cookie = name + '=; expires=' + exp + '; path=/; domain=.' + location.hostname;
+    });
+  }
+
+  function clearStorages() {
+    try { localStorage.clear(); } catch (e) {}
+    try { sessionStorage.clear(); } catch (e) {}
+  }
+
+  function clearIDB() {
+    return new Promise(function (resolve) {
+      try {
+        if ('indexedDB' in window && typeof indexedDB.databases === 'function') {
+          indexedDB.databases().then(function (dbs) {
+            dbs.forEach(function (d) { if (d && d.name) { try { indexedDB.deleteDatabase(d.name); } catch (e) {} } });
+            resolve(dbs.length + ' БД');
+          }, function () { resolve('пропущено'); });
+        } else { resolve('недоступно'); }
+      } catch (e) { resolve('пропущено'); }
+    });
+  }
+
+  function clearCaches() {
+    if (!('caches' in window)) return Promise.resolve('недоступно');
+    return caches.keys().then(function (keys) {
+      return Promise.all(keys.map(function (k) { return caches.delete(k); })).then(function () { return keys.length; });
+    });
+  }
+
+  function unregisterSW() {
+    if (!('serviceWorker' in navigator)) return Promise.resolve('недоступно');
+    return navigator.serviceWorker.getRegistrations().then(function (regs) {
+      return Promise.all(regs.map(function (r) { return r.unregister().catch(function () {}); })).then(function () { return regs.length; });
+    });
+  }
+
+  // Run steps sequentially. Each step is wrapped in its own try/catch so
+  // a failure of one doesn't abort the rest — partial cleanup is still
+  // better than nothing.
+  Promise.resolve()
+    .then(function () { return runStep('Cookies очищены', clearCookies); })
+    .then(function () { return runStep('localStorage / sessionStorage очищены', clearStorages); })
+    .then(function () { return runStep('IndexedDB очищен', clearIDB); })
+    .then(function () { return runStep('Кэши браузера очищены', clearCaches); })
+    .then(function () { return runStep('Service Worker удалён', unregisterSW); })
+    .then(function () {
+      add('Готово!', 'ok');
+      actionsEl.style.display = 'flex';
+    });
+
+  // Hard fallback: if for any weird reason the chain hangs > 6s, show
+  // the action button anyway so the user can always escape.
+  setTimeout(function () {
+    if (actionsEl.style.display === 'none') {
+      add('Очистка ещё идёт, но вы можете перейти на вход вручную.', 'warn');
+      actionsEl.style.display = 'flex';
+    }
+  }, 6000);
+})();
+</script>
+</body>
+</html>
