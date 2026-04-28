@@ -108,7 +108,38 @@ export default function TicketDetailPage() {
       .select('*, sender:profiles!ticket_messages_sender_id_fkey(*)')
       .eq('ticket_id', ticketId)
       .order('created_at', { ascending: true })
-    if (data) setMessages(data)
+    if (!data) { setMessages([]); return }
+
+    // Chat attachments live in the same private ticket-photos bucket; their
+    // attachment_url was saved as the (now-broken) public URL when the
+    // bucket was public. Extract the storage path from each URL and batch-
+    // sign them so the chat renders correctly post-private-switch.
+    const PUBLIC_PREFIX = '/storage/v1/object/public/ticket-photos/'
+    const pathByMsgId = new Map<string, string>()
+    for (const m of data) {
+      const url = (m as { attachment_url?: string }).attachment_url
+      if (!url) continue
+      const idx = url.indexOf(PUBLIC_PREFIX)
+      if (idx >= 0) pathByMsgId.set(m.id, url.slice(idx + PUBLIC_PREFIX.length))
+    }
+    if (pathByMsgId.size > 0) {
+      const paths = Array.from(pathByMsgId.values())
+      const { data: signed } = await supabase.storage
+        .from('ticket-photos')
+        .createSignedUrls(paths, 3600)
+      const signedByPath = new Map<string, string>()
+      ;(signed || []).forEach(s => { if (s.path && s.signedUrl) signedByPath.set(s.path, s.signedUrl) })
+      const remapped = data.map(m => {
+        const p = pathByMsgId.get(m.id)
+        if (!p) return m
+        const signedUrl = signedByPath.get(p)
+        if (!signedUrl) return m
+        return { ...m, attachment_url: signedUrl }
+      })
+      setMessages(remapped)
+    } else {
+      setMessages(data)
+    }
   }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadPhotos = useCallback(async () => {
