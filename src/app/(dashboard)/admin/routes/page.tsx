@@ -16,6 +16,8 @@ import {
   MapPin,
   Trash2,
   Inbox,
+  GitMerge,
+  Plus,
 } from 'lucide-react'
 
 type RouteWithTickets = Route & {
@@ -78,14 +80,34 @@ export default function RoutesPage() {
 
   return (
     <div className="space-y-4 animate-fade-in">
-      <div>
-        <h1 className="text-heading-2 text-text-primary flex items-center gap-2">
-          <RouteIcon className="w-6 h-6 text-accent" />
-          Маршруты исполнителей
-        </h1>
-        <p className="text-body-sm text-text-tertiary">
-          Маршруты создаются из списка заявок: выбери несколько и нажми «Маршрут».
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+        <div>
+          <h1 className="text-heading-2 text-text-primary flex items-center gap-2">
+            <RouteIcon className="w-6 h-6 text-accent" />
+            Маршруты исполнителей
+          </h1>
+          <p className="text-body-sm text-text-tertiary">
+            Стройте маршрут на день для подрядчика или объединяйте дубли заявок одного магазина.
+          </p>
+        </div>
+        {/* Always-available shortcuts so admin can start either workflow with
+            one click — both deep-link into /tickets in the right mode. */}
+        <div className="flex gap-2 flex-shrink-0">
+          <Link
+            href="/tickets?mode=merge"
+            className="px-3 py-2 rounded-xl border border-border text-body-sm font-medium text-text-secondary hover:text-text-primary hover:bg-surface-elevated/40 transition-colors flex items-center gap-1.5"
+          >
+            <GitMerge className="w-4 h-4" />
+            Объединить заявки
+          </Link>
+          <Link
+            href="/tickets?mode=route"
+            className="px-3 py-2 rounded-xl gradient-accent text-white text-body-sm font-semibold transition-all flex items-center gap-1.5 shadow-glow-sm hover:opacity-90"
+          >
+            <Plus className="w-4 h-4" />
+            Создать маршрут
+          </Link>
+        </div>
       </div>
 
       {loading ? (
@@ -98,12 +120,28 @@ export default function RoutesPage() {
           ))}
         </div>
       ) : routes.length === 0 ? (
-        <div className="card-premium p-8 text-center">
-          <Inbox className="w-12 h-12 mx-auto mb-3 text-text-tertiary opacity-40" />
-          <p className="text-body text-text-secondary">Маршрутов пока нет</p>
-          <Link href="/tickets" className="text-body-sm text-accent hover:underline mt-2 inline-block">
-            Перейти к заявкам
-          </Link>
+        <div className="card-premium p-8 text-center space-y-4">
+          <div>
+            <Inbox className="w-12 h-12 mx-auto mb-3 text-text-tertiary opacity-40" />
+            <p className="text-body text-text-secondary">Маршрутов пока нет</p>
+            <p className="text-caption text-text-tertiary mt-1">Создайте первый — выберите подразделение и категорию работ, отметьте заявки одной стороны.</p>
+          </div>
+          <div className="flex flex-col sm:flex-row gap-2 justify-center max-w-md mx-auto">
+            <Link
+              href="/tickets?mode=route"
+              className="flex-1 px-4 py-2.5 rounded-xl gradient-accent text-white text-body-sm font-semibold flex items-center justify-center gap-2 shadow-glow-sm hover:opacity-90"
+            >
+              <Plus className="w-4 h-4" />
+              Создать маршрут
+            </Link>
+            <Link
+              href="/tickets?mode=merge"
+              className="flex-1 px-4 py-2.5 rounded-xl border border-border text-body-sm font-medium text-text-secondary hover:text-text-primary hover:bg-surface-elevated/40 flex items-center justify-center gap-2 transition-colors"
+            >
+              <GitMerge className="w-4 h-4" />
+              Объединить заявки
+            </Link>
+          </div>
         </div>
       ) : (
         <div className="space-y-3">

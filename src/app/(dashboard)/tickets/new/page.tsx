@@ -72,7 +72,10 @@ export default function NewTicketPage() {
   const [selectedCategory, setSelectedCategory] = useState<TicketCategory | null>(null)
   const [description, setDescription] = useState('')
   const [contactPhone, setContactPhone] = useState('')
-  const [priority, setPriority] = useState<'normal' | 'high' | 'urgent'>('normal')
+  // Magazines pick between two levels only — "Срочный" used to be here but
+  // was abused; truly emergency tickets are determined by category.is_emergency
+  // (or admin manually flagging) instead.
+  const [priority, setPriority] = useState<'normal' | 'high'>('normal')
   const [photos, setPhotos] = useState<File[]>([])
   const [photoPreviews, setPhotoPreviews] = useState<string[]>([])
   const [storeHistory, setStoreHistory] = useState<StoreTicketMini[]>([])
@@ -234,10 +237,12 @@ export default function NewTicketPage() {
     if (!user || !selectedStore || !selectedCategory) return
     setLoading(true)
     try {
-      // Fetch division flag to decide whether ticket needs approval first.
-      // Urgent tickets always bypass approval.
+      // Determine emergency status from the chosen category. Emergency tickets
+      // bypass ДП approval (used to be priority=urgent — now it's the flag).
+      const isEmergency = !!selectedCategory.is_emergency
+
       let initialStatus: 'new' | 'pending_approval' = 'new'
-      if (priority !== 'urgent') {
+      if (!isEmergency) {
         const { data: division } = await supabase
           .from('divisions')
           .select('requires_approval')
@@ -258,6 +263,7 @@ export default function NewTicketPage() {
           description,
           contact_phone: contactPhone,
           priority,
+          is_emergency: isEmergency,
           created_by: user.id,
           status: initialStatus,
         })
@@ -618,7 +624,6 @@ export default function NewTicketPage() {
               {[
                 { value: 'normal' as const, label: 'Обычный', color: 'bg-blue-500/10 text-blue-400 border-blue-500/20' },
                 { value: 'high' as const, label: 'Высокий', color: 'bg-amber-500/10 text-amber-400 border-amber-500/20' },
-                { value: 'urgent' as const, label: 'Срочный', color: 'bg-red-500/10 text-red-400 border-red-500/20' },
               ].map(p => (
                 <button
                   key={p.value}
@@ -653,18 +658,33 @@ export default function NewTicketPage() {
                 </div>
               ))}
               {photos.length < 5 && (
-                <label className="w-20 h-20 rounded-xl border-2 border-dashed border-border hover:border-accent/40 flex flex-col items-center justify-center cursor-pointer transition-colors">
-                  <Camera className="w-5 h-5 text-text-tertiary" />
-                  <span className="text-micro text-text-tertiary mt-1">Фото</span>
-                  <input
-                    type="file"
-                    accept="image/*"
-                    multiple
-                    onChange={handlePhotoAdd}
-                    className="hidden"
-                    capture="environment"
-                  />
-                </label>
+                <>
+                  {/* Camera (forced) — for fresh on-the-spot photos */}
+                  <label className="w-20 h-20 rounded-xl border-2 border-dashed border-border hover:border-accent/40 flex flex-col items-center justify-center cursor-pointer transition-colors">
+                    <Camera className="w-5 h-5 text-text-tertiary" />
+                    <span className="text-micro text-text-tertiary mt-1">Снять</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePhotoAdd}
+                      className="hidden"
+                      capture="environment"
+                    />
+                  </label>
+                  {/* Gallery — for photos already in Photos app */}
+                  <label className="w-20 h-20 rounded-xl border-2 border-dashed border-border hover:border-accent/40 flex flex-col items-center justify-center cursor-pointer transition-colors">
+                    <Upload className="w-5 h-5 text-text-tertiary" />
+                    <span className="text-micro text-text-tertiary mt-1">Галерея</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      multiple
+                      onChange={handlePhotoAdd}
+                      className="hidden"
+                    />
+                  </label>
+                </>
               )}
             </div>
           </div>

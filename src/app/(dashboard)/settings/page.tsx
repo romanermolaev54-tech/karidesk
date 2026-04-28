@@ -44,6 +44,19 @@ export default function SettingsPage() {
 
   const [fullName, setFullName] = useState(profile?.full_name || '')
   const [phone, setPhone] = useState(profile?.phone || '')
+
+  // Sync the form to the profile once it arrives. This handles the case
+  // where the page mounts before useAuth has resolved (`profile` was null
+  // at first render, useState froze fields at empty). Re-syncing on
+  // profile.id transitions only — never clobbers the user's in-progress
+  // edits while they're typing on the same profile.
+  useEffect(() => {
+    if (profile) {
+      setFullName(profile.full_name || '')
+      setPhone(profile.phone || '')
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [profile?.id])
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
   const [newPassword, setNewPassword] = useState('')
@@ -163,14 +176,47 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     if (!user) return
+    const trimmedName = fullName.trim()
+    const trimmedPhone = phone.trim()
+    if (!trimmedName) {
+      toast.error('Введите ФИО')
+      return
+    }
+    if (!trimmedPhone) {
+      toast.error('Введите телефон')
+      return
+    }
     setSaving(true)
-    await supabase
+    const { error } = await supabase
       .from('profiles')
-      .update({ full_name: fullName, phone, updated_at: new Date().toISOString() })
+      .update({ full_name: trimmedName, phone: trimmedPhone, updated_at: new Date().toISOString() })
       .eq('id', user.id)
     setSaving(false)
+    if (error) {
+      // Without this surfacing, the user used to see "Сохранено" even when
+      // the DB rejected the update (RLS / NOT NULL / etc.) and walked away
+      // thinking it worked.
+      toast.error('Не удалось сохранить: ' + error.message)
+      return
+    }
+    // Patch the useAuth localStorage cache so subsequent navigations don't
+    // overwrite our just-saved form with a 24-hour-old cached version.
+    try {
+      const raw = localStorage.getItem('karidesk_profile_v1')
+      if (raw) {
+        const cached = JSON.parse(raw) as { ts: number; userId: string; profile: Record<string, unknown> }
+        if (cached.userId === user.id && cached.profile) {
+          cached.profile.full_name = trimmedName
+          cached.profile.phone = trimmedPhone
+          cached.ts = Date.now()
+          localStorage.setItem('karidesk_profile_v1', JSON.stringify(cached))
+          sessionStorage.setItem('karidesk_profile_v1', JSON.stringify(cached))
+        }
+      }
+    } catch { /* cache patch is best-effort */ }
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
+    toast.success('Сохранено')
   }
 
   const handleLogout = async () => {

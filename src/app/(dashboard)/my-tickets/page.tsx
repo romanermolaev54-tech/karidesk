@@ -6,7 +6,7 @@ import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
 import { Badge } from '@/components/ui/Badge'
 import { formatRelative, formatTicketNumber } from '@/lib/utils'
-import { TICKET_STATUSES, TICKET_PRIORITIES } from '@/lib/constants'
+import { TICKET_STATUSES, TICKET_PRIORITIES, PRIORITY_SHOWS_BADGE } from '@/lib/constants'
 import Link from 'next/link'
 import type { Ticket, TicketStatus } from '@/types/database'
 import {
@@ -136,16 +136,33 @@ export default function MyTicketsPage() {
                       <span className="text-body-sm font-semibold text-accent/80">
                         {formatTicketNumber(ticket.ticket_number)}
                       </span>
-                      <Badge
-                        variant={statusInfo.color as 'info' | 'warning' | 'success' | 'danger' | 'accent'}
-                        dot
-                      >
-                        {statusInfo.label}
-                      </Badge>
-                      {ticket.priority !== 'normal' && (
+                      {ticket.status === 'new' && ticket.category ? (
+                        <span
+                          className="px-2 py-0.5 rounded-md text-caption font-semibold"
+                          style={{
+                            backgroundColor: (ticket.category.color || '#64748B') + '20',
+                            color: ticket.category.color || '#94a3b8',
+                          }}
+                        >
+                          {ticket.category.name}
+                        </span>
+                      ) : (
+                        <Badge
+                          variant={statusInfo.color as 'info' | 'warning' | 'success' | 'danger' | 'accent'}
+                          dot
+                        >
+                          {statusInfo.label}
+                        </Badge>
+                      )}
+                      {PRIORITY_SHOWS_BADGE[ticket.priority] && (
                         <Badge variant={priorityInfo.color as 'warning' | 'danger'}>
                           {priorityInfo.label}
                         </Badge>
+                      )}
+                      {ticket.is_emergency && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-400 text-[10px] font-bold uppercase tracking-wide">
+                          🚨 Авария
+                        </span>
                       )}
                     </div>
                     <p className="text-body-sm text-text-primary mt-1.5 line-clamp-2">

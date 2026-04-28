@@ -60,6 +60,8 @@ export interface TicketCategory {
   default_deadline_hours: number | null
   hint: string | null
   external_url: string | null
+  ai_hint?: string | null
+  is_emergency?: boolean
   created_at: string
 }
 
@@ -72,6 +74,10 @@ export interface Ticket {
   description: string
   status: TicketStatus
   priority: TicketPriority
+  // Per-ticket emergency flag. Drives the "Аварийные" dashboard tile and
+  // bypasses ДП approval. Defaults to category.is_emergency at creation,
+  // admin can flip on any ticket from the ticket detail page.
+  is_emergency: boolean
   created_by: string
   assigned_to: string | null
   assigned_by: string | null

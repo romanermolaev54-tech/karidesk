@@ -14,10 +14,11 @@ import {
   ClipboardList,
   Clock,
   CheckCircle,
-  AlertTriangle,
+  Siren,
   TrendingUp,
   ArrowRight,
   ChevronRight,
+  Inbox,
 } from 'lucide-react'
 
 export default function DashboardPage() {
@@ -25,7 +26,7 @@ export default function DashboardPage() {
   const supabase = createClient()
 
   const [recentTickets, setRecentTickets] = useState<Ticket[]>([])
-  const [counts, setCounts] = useState({ new: 0, in_progress: 0, completed: 0, urgent: 0 })
+  const [counts, setCounts] = useState({ new: 0, in_progress: 0, completed: 0, emergency: 0, total_active: 0 })
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -50,33 +51,44 @@ export default function DashboardPage() {
       .select('*, store:stores(id, store_number, name), category:ticket_categories(id, name, color)')
       .order('created_at', { ascending: false })
       .limit(5)
-    let cNew      = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('status', 'new')
-    let cInProg   = supabase.from('tickets').select('id', { count: 'exact', head: true }).in('status', ['assigned', 'in_progress'])
-    let cDone     = supabase.from('tickets').select('id', { count: 'exact', head: true }).in('status', ['completed', 'verified'])
-    let cUrgent   = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('priority', 'urgent')
+    let cNew         = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('status', 'new')
+    let cInProg      = supabase.from('tickets').select('id', { count: 'exact', head: true }).in('status', ['assigned', 'in_progress'])
+    let cDone        = supabase.from('tickets').select('id', { count: 'exact', head: true }).in('status', ['completed', 'verified'])
+    // "Аварийные" used to mean priority=urgent, which magazines abused. Now
+    // it's the per-ticket emergency flag — admin-curated, accurate.
+    let cEmergency   = supabase.from('tickets').select('id', { count: 'exact', head: true })
+      .eq('is_emergency', true)
+      .not('status', 'in', '(verified,rejected,merged)')
+    // "Всего активных" — anything that isn't already closed/merged. Lets the
+    // user immediately see workload without doing the math.
+    let cTotalActive = supabase.from('tickets').select('id', { count: 'exact', head: true })
+      .not('status', 'in', '(verified,rejected,merged)')
 
     if (role === 'employee') {
       recent = recent.eq('created_by', user.id)
       cNew = cNew.eq('created_by', user.id)
       cInProg = cInProg.eq('created_by', user.id)
       cDone = cDone.eq('created_by', user.id)
-      cUrgent = cUrgent.eq('created_by', user.id)
+      cEmergency = cEmergency.eq('created_by', user.id)
+      cTotalActive = cTotalActive.eq('created_by', user.id)
     } else if (role === 'contractor') {
       recent = recent.eq('assigned_to', user.id)
       cNew = cNew.eq('assigned_to', user.id)
       cInProg = cInProg.eq('assigned_to', user.id)
       cDone = cDone.eq('assigned_to', user.id)
-      cUrgent = cUrgent.eq('assigned_to', user.id)
+      cEmergency = cEmergency.eq('assigned_to', user.id)
+      cTotalActive = cTotalActive.eq('assigned_to', user.id)
     } else if (isDirector && profile?.division_id) {
       recent = recent.eq('division_id', profile.division_id)
       cNew = cNew.eq('division_id', profile.division_id)
       cInProg = cInProg.eq('division_id', profile.division_id)
       cDone = cDone.eq('division_id', profile.division_id)
-      cUrgent = cUrgent.eq('division_id', profile.division_id)
+      cEmergency = cEmergency.eq('division_id', profile.division_id)
+      cTotalActive = cTotalActive.eq('division_id', profile.division_id)
     }
 
-    const [recentRes, newRes, inProgRes, doneRes, urgRes] = await Promise.all([
-      recent, cNew, cInProg, cDone, cUrgent,
+    const [recentRes, newRes, inProgRes, doneRes, emRes, totalRes] = await Promise.all([
+      recent, cNew, cInProg, cDone, cEmergency, cTotalActive,
     ])
 
     setRecentTickets(recentRes.data || [])
@@ -84,7 +96,8 @@ export default function DashboardPage() {
       new: newRes.count || 0,
       in_progress: inProgRes.count || 0,
       completed: doneRes.count || 0,
-      urgent: urgRes.count || 0,
+      emergency: emRes.count || 0,
+      total_active: totalRes.count || 0,
     })
     setLoading(false)
   }
@@ -93,6 +106,14 @@ export default function DashboardPage() {
   const isAdminOrDir = role === 'admin' || role === 'director'
 
   const stats = [
+    {
+      label: 'Всего активных',
+      value: counts.total_active,
+      icon: Inbox,
+      color: 'text-text-primary',
+      bg: 'bg-surface-elevated/40',
+      href: baseList,
+    },
     {
       label: 'Новые',
       value: counts.new,
@@ -118,12 +139,12 @@ export default function DashboardPage() {
       href: isAdminOrDir ? `${baseList}?status=completed` : baseList,
     },
     {
-      label: 'Срочные',
-      value: counts.urgent,
-      icon: AlertTriangle,
+      label: 'Аварийные',
+      value: counts.emergency,
+      icon: Siren,
       color: 'text-red-400',
       bg: 'bg-red-500/10',
-      href: isAdminOrDir ? `${baseList}?priority=urgent` : baseList,
+      href: isAdminOrDir ? `${baseList}?emergency=1` : baseList,
     },
   ]
 
@@ -152,7 +173,7 @@ export default function DashboardPage() {
       </div>
 
       {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 lg:gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">
         {stats.map((stat) => (
           <Link
             key={stat.label}
@@ -292,12 +313,24 @@ export default function DashboardPage() {
                       </p>
                     )}
                   </div>
-                  <Badge
-                    variant={statusInfo.color as 'info' | 'warning' | 'success' | 'danger' | 'accent'}
-                    size="sm"
-                  >
-                    {statusInfo.label}
-                  </Badge>
+                  {ticket.status === 'new' && ticket.category ? (
+                    <span
+                      className="px-2 py-0.5 rounded-md text-caption font-semibold flex-shrink-0"
+                      style={{
+                        backgroundColor: (ticket.category.color || '#64748B') + '20',
+                        color: ticket.category.color || '#94a3b8',
+                      }}
+                    >
+                      {ticket.category.name}
+                    </span>
+                  ) : (
+                    <Badge
+                      variant={statusInfo.color as 'info' | 'warning' | 'success' | 'danger' | 'accent'}
+                      size="sm"
+                    >
+                      {statusInfo.label}
+                    </Badge>
+                  )}
                   <ChevronRight className="w-4 h-4 text-text-tertiary flex-shrink-0" />
                 </Link>
               )

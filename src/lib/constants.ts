@@ -11,12 +11,28 @@ export const TICKET_STATUSES = {
   merged: { label: 'Объединена', color: 'default', icon: 'GitMerge' },
 } as const
 
+// Display-only consolidation: legacy 'low' tickets render the same as 'normal'
+// (no badge / "Обычный"), and legacy 'urgent' tickets render the same as
+// 'high' ("Высокий"). DB still allows all four values for historical rows;
+// the new ticket form only offers two (normal / high). The visceral
+// "this is an emergency" signal moved out of priority entirely — it lives
+// on the per-ticket is_emergency flag now and displays as a separate red
+// 🚨 badge.
 export const TICKET_PRIORITIES = {
-  low: { label: 'Низкий', color: 'default' },
-  normal: { label: 'Обычный', color: 'info' },
-  high: { label: 'Высокий', color: 'warning' },
-  urgent: { label: 'Срочный', color: 'danger' },
+  low:    { label: 'Обычный', color: 'default' },
+  normal: { label: 'Обычный', color: 'default' },
+  high:   { label: 'Высокий', color: 'warning' },
+  urgent: { label: 'Высокий', color: 'warning' },
 } as const
+
+// Whether a given priority value should render a visible badge on the ticket
+// card. "Обычный" is hidden for visual density.
+export const PRIORITY_SHOWS_BADGE: Record<string, boolean> = {
+  low: false,
+  normal: false,
+  high: true,
+  urgent: true,
+}
 
 export const TICKET_CATEGORIES = [
   { id: 'minor_repairs', name: 'Мелкие текущие заявки', icon: 'Wrench', color: '#64748B' },

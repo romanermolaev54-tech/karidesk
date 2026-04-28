@@ -21,6 +21,7 @@ interface Category {
   hint: string | null
   external_url: string | null
   ai_hint: string | null
+  is_emergency: boolean
 }
 
 export default function CategoriesPage() {
@@ -35,6 +36,7 @@ export default function CategoriesPage() {
   const [editHint, setEditHint] = useState('')
   const [editUrl, setEditUrl] = useState('')
   const [editAiHint, setEditAiHint] = useState('')
+  const [editIsEmergency, setEditIsEmergency] = useState(false)
   const [saving, setSaving] = useState(false)
   const [isNew, setIsNew] = useState(false)
 
@@ -54,6 +56,7 @@ export default function CategoriesPage() {
     setEditHint(cat.hint || '')
     setEditUrl(cat.external_url || '')
     setEditAiHint(cat.ai_hint || '')
+    setEditIsEmergency(!!cat.is_emergency)
     setIsNew(false)
   }
 
@@ -65,6 +68,7 @@ export default function CategoriesPage() {
     setEditHint('')
     setEditUrl('')
     setEditAiHint('')
+    setEditIsEmergency(false)
     setIsNew(true)
   }
 
@@ -77,6 +81,7 @@ export default function CategoriesPage() {
       hint: editHint.trim() || null,
       external_url: editUrl.trim() || null,
       ai_hint: editAiHint.trim() || null,
+      is_emergency: editIsEmergency,
     }
     if (isNew) {
       const { data, error } = await supabase.from('ticket_categories').insert({
@@ -134,7 +139,14 @@ export default function CategoriesPage() {
                     <Tags className="w-5 h-5" style={{ color: c.color || '#64748B' }} />
                   </div>
                   <div>
-                    <p className="text-body-sm font-medium text-text-primary">{c.name}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-body-sm font-medium text-text-primary">{c.name}</p>
+                      {c.is_emergency && (
+                        <span className="px-1.5 py-0.5 rounded-md bg-red-500/15 text-red-400 text-[10px] font-bold uppercase tracking-wide">
+                          🚨 Аварийная
+                        </span>
+                      )}
+                    </div>
                     {c.default_deadline_hours && (
                       <p className="text-caption text-text-tertiary">Дедлайн: {c.default_deadline_hours}ч</p>
                     )}
@@ -154,6 +166,27 @@ export default function CategoriesPage() {
           <Input label="Название" value={editName} onChange={e => setEditName(e.target.value)} placeholder="Сантехника" />
           <Input label="Цвет (HEX)" value={editColor} onChange={e => setEditColor(e.target.value)} placeholder="#34D399" />
           <Input label="Дедлайн (часы)" type="number" value={editDeadline} onChange={e => setEditDeadline(e.target.value)} placeholder="48" />
+
+          {/* Emergency flag — drives the dashboard "Аварийные" tile and bypasses
+              ДП approval. Tickets created in this category auto-inherit the
+              flag; admin can still flip individual tickets manually. */}
+          <label className="flex items-start gap-3 p-3 rounded-xl border border-red-500/20 bg-red-500/5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={editIsEmergency}
+              onChange={e => setEditIsEmergency(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-red-500"
+            />
+            <div className="flex-1">
+              <p className="text-body-sm font-semibold text-text-primary flex items-center gap-1.5">
+                🚨 Аварийная категория
+              </p>
+              <p className="text-caption text-text-tertiary mt-0.5">
+                Заявки этой категории автоматически попадают в плитку «Аварийные» на дашборде,
+                <b className="text-text-secondary"> идут в обход согласования ДП</b> и приходят админам с приоритетом разбора.
+              </p>
+            </div>
+          </label>
 
           <div className="border-t border-border pt-4 space-y-4">
             <p className="text-caption text-text-tertiary">

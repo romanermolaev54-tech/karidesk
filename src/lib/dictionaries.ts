@@ -28,7 +28,10 @@ function write<T>(key: string, data: T) {
 }
 
 const KEY_STORES = 'karidesk_dict_stores_v1'
-const KEY_CATEGORIES = 'karidesk_dict_categories_v1'
+// v2: ticket_categories now includes is_emergency. Bumping the key forces
+// browsers with stale cached categories (without the new column) to refetch
+// on the first load with the new build.
+const KEY_CATEGORIES = 'karidesk_dict_categories_v2'
 const KEY_DIVISIONS = 'karidesk_dict_divisions_v1'
 
 /**

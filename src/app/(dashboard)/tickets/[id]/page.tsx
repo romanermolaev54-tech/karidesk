@@ -10,7 +10,7 @@ import { Textarea } from '@/components/ui/Textarea'
 import { Select } from '@/components/ui/Select'
 import { Modal } from '@/components/ui/Modal'
 import { formatDate, formatRelative, formatTicketNumber, formatPhone } from '@/lib/utils'
-import { TICKET_STATUSES, TICKET_PRIORITIES } from '@/lib/constants'
+import { TICKET_STATUSES, TICKET_PRIORITIES, PRIORITY_SHOWS_BADGE } from '@/lib/constants'
 import type { Ticket, TicketMessage, TicketPhoto, TicketHistory, TicketStatus, Profile } from '@/types/database'
 import {
   ArrowLeft,
@@ -33,6 +33,8 @@ import {
   Paperclip,
   Share2,
   Flame,
+  Edit3,
+  Siren,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { compressImage } from '@/lib/image'
@@ -74,6 +76,13 @@ export default function TicketDetailPage() {
   const [showEscalateModal, setShowEscalateModal] = useState(false)
   const [escalateNote, setEscalateNote] = useState('')
   const [escalating, setEscalating] = useState(false)
+  // Admin metadata edit (category / priority / is_emergency override)
+  const [showEditMetaModal, setShowEditMetaModal] = useState(false)
+  const [editCategoryId, setEditCategoryId] = useState<string>('')
+  const [editPriority, setEditPriority] = useState<'low' | 'normal' | 'high' | 'urgent'>('normal')
+  const [editIsEmergency, setEditIsEmergency] = useState(false)
+  const [editAllCategories, setEditAllCategories] = useState<Array<{ id: string; name: string }>>([])
+  const [savingMeta, setSavingMeta] = useState(false)
 
   const loadTicket = useCallback(async () => {
     const { data } = await supabase
@@ -359,6 +368,59 @@ export default function TicketDetailPage() {
     }
   }
 
+  /** Open the metadata-edit modal and lazy-load the categories list. */
+  const openEditMetaModal = async () => {
+    if (!ticket) return
+    setEditCategoryId(ticket.category_id)
+    setEditPriority(ticket.priority)
+    setEditIsEmergency(!!ticket.is_emergency)
+    if (editAllCategories.length === 0) {
+      const { data } = await supabase
+        .from('ticket_categories')
+        .select('id, name')
+        .eq('is_active', true)
+        .order('sort_order')
+      if (data) setEditAllCategories(data)
+    }
+    setShowEditMetaModal(true)
+  }
+
+  const saveMeta = async () => {
+    if (!ticket) return
+    setSavingMeta(true)
+    const { error } = await supabase
+      .from('tickets')
+      .update({
+        category_id: editCategoryId,
+        priority: editPriority,
+        is_emergency: editIsEmergency,
+      })
+      .eq('id', ticket.id)
+    setSavingMeta(false)
+    if (error) {
+      toast.error('Ошибка: ' + error.message)
+      return
+    }
+    // Audit trail — record what changed in ticket_history. Best-effort,
+    // never blocks the UI even if it fails.
+    const changes: string[] = []
+    if (editCategoryId !== ticket.category_id) changes.push('категория')
+    if (editPriority !== ticket.priority) changes.push('приоритет')
+    if (editIsEmergency !== !!ticket.is_emergency) changes.push(editIsEmergency ? 'отмечена аварийной' : 'снят флаг аварии')
+    if (changes.length > 0 && user) {
+      await supabase.from('ticket_history').insert({
+        ticket_id: ticket.id,
+        action: 'meta_changed',
+        new_value: changes.join(', '),
+        actor_id: user.id,
+      }).then(() => null, () => null)
+    }
+    setShowEditMetaModal(false)
+    toast.success('Сохранено')
+    // Refresh local copy
+    loadTicket()
+  }
+
   const ESCALATE_COOLDOWN_MIN = 60
 
   const lastEscalateKey = (id: string) => `karidesk_escalate_${id}`
@@ -537,6 +599,17 @@ export default function TicketDetailPage() {
             >
               <Share2 className="w-4 h-4" />
             </button>
+            {/* Admin-only metadata edit. Lets admin reclassify a ticket
+                (correct category / priority) and flip the emergency flag. */}
+            {isAdmin && (
+              <button
+                onClick={openEditMetaModal}
+                className="p-1.5 rounded-lg text-text-tertiary hover:text-accent hover:bg-accent/5 transition-colors"
+                title="Изменить категорию / приоритет / аварийность"
+              >
+                <Edit3 className="w-4 h-4" />
+              </button>
+            )}
             <Badge
               variant={statusInfo.color as 'info' | 'warning' | 'success' | 'danger' | 'accent'}
               size="md"
@@ -544,10 +617,19 @@ export default function TicketDetailPage() {
             >
               {statusInfo.label}
             </Badge>
-            {ticket.priority !== 'normal' && (
+            {/* Priority — only render if it's actually meaningful (high/urgent
+                map to "Высокий" badge; low/normal hide entirely for less noise). */}
+            {PRIORITY_SHOWS_BADGE[ticket.priority] && (
               <Badge variant={priorityInfo.color as 'warning' | 'danger'} size="md">
                 {priorityInfo.label}
               </Badge>
+            )}
+            {/* Emergency flag — separate, louder badge. Drives the dashboard
+                "Аварийные" tile and bypasses ДП approval. */}
+            {ticket.is_emergency && (
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-red-500/15 text-red-400 text-caption font-bold uppercase tracking-wide">
+                🚨 Аварийная
+              </span>
             )}
           </div>
           <p className="text-body-sm text-text-tertiary mt-1">
@@ -1234,6 +1316,71 @@ export default function TicketDetailPage() {
         </div>
           )
         })()}
+      </Modal>
+
+      {/* Admin: edit ticket metadata (category / priority / emergency) */}
+      <Modal isOpen={showEditMetaModal} onClose={() => setShowEditMetaModal(false)} title="Параметры заявки">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-body-sm font-medium text-text-secondary mb-1.5">Категория</label>
+            <select
+              value={editCategoryId}
+              onChange={e => setEditCategoryId(e.target.value)}
+              className="w-full px-3 py-2 rounded-xl border border-border bg-surface-muted/30 text-text-primary text-body-sm focus:outline-none focus:ring-2 focus:ring-accent/15"
+            >
+              {editAllCategories.map(c => (
+                <option key={c.id} value={c.id}>{c.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="block text-body-sm font-medium text-text-secondary mb-1.5">Приоритет</label>
+            <div className="flex gap-2">
+              {[
+                { value: 'normal' as const, label: 'Обычный' },
+                { value: 'high' as const, label: 'Высокий' },
+              ].map(p => (
+                <button
+                  key={p.value}
+                  onClick={() => setEditPriority(p.value)}
+                  className={`flex-1 py-2 px-3 rounded-xl border text-body-sm font-medium transition-all ${
+                    editPriority === p.value
+                      ? 'border-accent/40 bg-accent/10 text-accent ring-2 ring-accent/15'
+                      : 'border-border text-text-tertiary hover:border-border-strong'
+                  }`}
+                >
+                  {p.label}
+                </button>
+              ))}
+            </div>
+            {(editPriority === 'low' || editPriority === 'urgent') && (
+              <p className="text-caption text-text-tertiary mt-1">
+                Текущее значение «{editPriority === 'low' ? 'Низкий' : 'Срочный'}» осталось от старой схемы. При сохранении новый приоритет перезапишет его.
+              </p>
+            )}
+          </div>
+          <label className="flex items-start gap-3 p-3 rounded-xl border border-red-500/20 bg-red-500/5 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={editIsEmergency}
+              onChange={e => setEditIsEmergency(e.target.checked)}
+              className="mt-0.5 w-4 h-4 accent-red-500"
+            />
+            <div className="flex-1">
+              <p className="text-body-sm font-semibold text-text-primary flex items-center gap-1.5">
+                <Siren className="w-3.5 h-3.5 text-red-400" />
+                Аварийная заявка
+              </p>
+              <p className="text-caption text-text-tertiary mt-0.5">
+                Попадает в плитку «Аварийные» на дашборде. Выставляется автоматически для аварийных категорий — но вы можете включить вручную для любой заявки.
+              </p>
+            </div>
+          </label>
+          <div className="flex gap-2 pt-1">
+            <Button variant="secondary" onClick={() => setShowEditMetaModal(false)} className="flex-1">Отмена</Button>
+            <Button onClick={saveMeta} loading={savingMeta} className="flex-1">Сохранить</Button>
+          </div>
+        </div>
       </Modal>
 
       {/* Reject modal */}
