@@ -117,7 +117,27 @@ export default function TicketDetailPage() {
       .select('*')
       .eq('ticket_id', ticketId)
       .order('created_at')
-    if (data) setPhotos(data)
+    if (!data) { setPhotos([]); return }
+
+    // Bucket is private (since 2026-04-28 security pass) — public URLs no
+    // longer work. Generate short-lived signed URLs in one batch call so
+    // we don't wait on N round-trips for N photos. Falls back to whatever
+    // file_url is in the DB if signing fails (e.g. orphan rows).
+    const paths = data.map(p => p.storage_path).filter(Boolean) as string[]
+    if (paths.length > 0) {
+      const { data: signed } = await supabase.storage
+        .from('ticket-photos')
+        .createSignedUrls(paths, 3600) // 1 hour — refreshed on next page load
+      const urlByPath = new Map<string, string>()
+      ;(signed || []).forEach(s => { if (s.path && s.signedUrl) urlByPath.set(s.path, s.signedUrl) })
+      const withSigned = data.map(p => ({
+        ...p,
+        file_url: urlByPath.get(p.storage_path) || p.file_url,
+      }))
+      setPhotos(withSigned)
+    } else {
+      setPhotos(data)
+    }
   }, [ticketId]) // eslint-disable-line react-hooks/exhaustive-deps
 
   const loadHistory = useCallback(async () => {
