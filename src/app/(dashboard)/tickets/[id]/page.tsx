@@ -35,6 +35,8 @@ import {
   Flame,
   Edit3,
   Siren,
+  RotateCcw,
+  Lock,
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { compressImage } from '@/lib/image'
@@ -85,6 +87,19 @@ export default function TicketDetailPage() {
   const [editIsEmergency, setEditIsEmergency] = useState(false)
   const [editAllCategories, setEditAllCategories] = useState<Array<{ id: string; name: string }>>([])
   const [savingMeta, setSavingMeta] = useState(false)
+  // "Вернуть в работу" — store (or admin) sends a verified/completed/partially_completed
+  // ticket back to the contractor. Reason is mandatory (≥10 chars) so the
+  // contractor knows what to fix. New ticket_history entry logs the round-trip.
+  const [showReturnModal, setShowReturnModal] = useState(false)
+  const [returnReason, setReturnReason] = useState('')
+  const [returning, setReturning] = useState(false)
+  // Admin "Закрыть заявку" force-close — accessed from the edit modal. Lets
+  // admin close a ticket at any active status without photo/act (rare cases:
+  // verbal report, ticket no longer relevant, store agreement out-of-band).
+  // Optional reason — a single dot is fine, but most admins will write context.
+  const [showForceCloseModal, setShowForceCloseModal] = useState(false)
+  const [forceCloseReason, setForceCloseReason] = useState('')
+  const [forceClosing, setForceClosing] = useState(false)
 
   const loadTicket = useCallback(async () => {
     const { data } = await supabase
@@ -346,9 +361,22 @@ export default function TicketDetailPage() {
     if (!user) return
     setCompleting(true)
     const nowIso = new Date().toISOString()
+    // Mode 'full' is gated in the UI on having both ≥1 completion photo and
+    // ≥1 act — the Submit button stays disabled otherwise. So a successful
+    // 'full' click *always* means evidence is present, and we can take the
+    // ticket straight to `verified` without parking it on `completed` for an
+    // admin to rubber-stamp. This is the auto-verify shortcut Roman asked for
+    // on 2026-04-29: 95% of tickets close themselves; the rare bad ones get
+    // sent back via "Вернуть в работу".
+    //
+    // Mode 'partial' still goes through `partially_completed` — the store
+    // (or admin) decides what to do with it (accept as-is, return, or spawn
+    // a continuation ticket).
     const updates: Record<string, unknown> = { completed_at: nowIso }
     if (completeMode === 'full') {
-      updates.status = 'completed'
+      updates.status = 'verified'
+      updates.verified_at = nowIso
+      updates.verified_by = user.id
       updates.partial_comment = null
     } else {
       updates.status = 'partially_completed'
@@ -366,13 +394,166 @@ export default function TicketDetailPage() {
       old_value: ticket?.status,
       new_value: updates.status,
       actor_id: user.id,
-      details: completeMode === 'partial' ? { partial_comment: partialComment.trim() } : null,
+      details: completeMode === 'partial'
+        ? { partial_comment: partialComment.trim() }
+        : { auto_verified: true, reason: 'photo+act present' },
     })
     setShowCompleteModal(false)
     setPartialComment('')
     setCompleteMode('full')
     setCompleting(false)
-    toast.success(completeMode === 'partial' ? 'Заявка частично закрыта' : 'Заявка завершена')
+    toast.success(
+      completeMode === 'partial'
+        ? 'Заявка частично закрыта'
+        : 'Заявка автоматически принята (фото и акт загружены)'
+    )
+    await loadTicket()
+    await loadHistory()
+  }
+
+  /**
+   * Send a closed/completed ticket back to the assigned contractor for
+   * rework. Reason is mandatory (UI gates ≥10 chars) and gets logged into
+   * ticket_history so the audit trail is intact.
+   *
+   * Status returns to `in_progress` (not `assigned`) — the contractor has
+   * already accepted the ticket once; we don't want to make them re-tap
+   * "Взять в работу" just to fix a photo. Their existing photos stay put so
+   * they can review/replace what the store flagged.
+   */
+  const returnToWork = async () => {
+    if (!user || !ticket) return
+    const trimmed = returnReason.trim()
+    if (trimmed.length < 10) {
+      toast.error('Опишите причину возврата (мин. 10 символов)')
+      return
+    }
+    setReturning(true)
+    const nowIso = new Date().toISOString()
+    const { error } = await supabase
+      .from('tickets')
+      .update({
+        status: 'in_progress',
+        // Clear the verified stamp — this ticket is no longer accepted.
+        // completed_at/verified_at removal preserves the timeline in history.
+        verified_at: null,
+        verified_by: null,
+        completed_at: null,
+        updated_at: nowIso,
+      })
+      .eq('id', ticket.id)
+    if (error) {
+      setReturning(false)
+      toast.error('Не удалось вернуть: ' + error.message)
+      return
+    }
+    await supabase.from('ticket_history').insert({
+      ticket_id: ticket.id,
+      action: 'returned_to_work',
+      old_value: ticket.status,
+      new_value: 'in_progress',
+      actor_id: user.id,
+      details: { reason: trimmed },
+    })
+    // Best-effort push to the contractor — server route already exists for
+    // generic ticket pushes; reuse it. Failure here is non-fatal — the status
+    // change itself is what matters.
+    try {
+      if (ticket.assigned_to) {
+        await fetch('/api/push/send', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            user_id: ticket.assigned_to,
+            title: `🔄 Заявка ${formatTicketNumber(ticket.ticket_number)} возвращена в работу`,
+            body: trimmed.slice(0, 140),
+            url: `/tickets/${ticket.id}`,
+          }),
+        })
+      }
+    } catch { /* swallow — push is best-effort */ }
+    setReturning(false)
+    setShowReturnModal(false)
+    setReturnReason('')
+    toast.success('Возвращено в работу — исполнитель уведомлён')
+    await loadTicket()
+    await loadHistory()
+  }
+
+  /**
+   * Store accepts a `completed` or `partially_completed` ticket without
+   * having to wait for an admin. Bumps to `verified`. Used when the
+   * contractor closed without a full photo+act set (rare path now), so
+   * auto-verify didn't kick in.
+   */
+  const storeAccept = async () => {
+    if (!user || !ticket) return
+    if (!confirm('Принять заявку и закрыть её?')) return
+    const nowIso = new Date().toISOString()
+    const { error } = await supabase
+      .from('tickets')
+      .update({
+        status: 'verified',
+        verified_at: nowIso,
+        verified_by: user.id,
+        updated_at: nowIso,
+      })
+      .eq('id', ticket.id)
+    if (error) {
+      toast.error('Не удалось принять: ' + error.message)
+      return
+    }
+    await supabase.from('ticket_history').insert({
+      ticket_id: ticket.id,
+      action: 'status_changed',
+      old_value: ticket.status,
+      new_value: 'verified',
+      actor_id: user.id,
+      details: { manually_accepted_by_store: true },
+    })
+    toast.success('Заявка принята и закрыта')
+    await loadTicket()
+    await loadHistory()
+  }
+
+  /**
+   * Admin force-close: bypass the photo+act requirement entirely. Used for
+   * edge cases — verbal report, ticket no longer relevant, etc. Reason is
+   * optional (one dot accepted) but the admin should normally type context
+   * for the audit trail. Final status is always `verified`.
+   */
+  const forceClose = async () => {
+    if (!user || !ticket) return
+    setForceClosing(true)
+    const nowIso = new Date().toISOString()
+    const { error } = await supabase
+      .from('tickets')
+      .update({
+        status: 'verified',
+        verified_at: nowIso,
+        verified_by: user.id,
+        completed_at: ticket.completed_at || nowIso,
+        updated_at: nowIso,
+      })
+      .eq('id', ticket.id)
+    if (error) {
+      setForceClosing(false)
+      toast.error('Не удалось закрыть: ' + error.message)
+      return
+    }
+    await supabase.from('ticket_history').insert({
+      ticket_id: ticket.id,
+      action: 'force_closed',
+      old_value: ticket.status,
+      new_value: 'verified',
+      actor_id: user.id,
+      details: { reason: forceCloseReason.trim() || null, force_closed_by_admin: true },
+    })
+    setForceClosing(false)
+    setShowForceCloseModal(false)
+    setForceCloseReason('')
+    setShowEditMetaModal(false)
+    toast.success('Заявка закрыта')
     await loadTicket()
     await loadHistory()
   }
@@ -661,6 +842,43 @@ export default function TicketDetailPage() {
     return false
   }
 
+  // Window during which the store can still send a verified ticket back to
+  // the contractor. Beyond this only admin can do it (via the edit modal →
+  // "Закрыть заявку" or by reassigning). 7 days mirrors what the product
+  // owner asked for on 2026-04-29.
+  const STORE_RETURN_WINDOW_DAYS = 7
+
+  /**
+   * Can the *current user* act on this ticket as "the store" — i.e. accept
+   * a completed ticket or return it to work? The product rule:
+   *   - admin: always
+   *   - employee whose store_id matches the ticket: yes (any store member,
+   *     not only the creator — a colleague who's actually in the shop today
+   *     should be able to inspect & return without us hunting down the
+   *     original author)
+   *   - director / contractor: never (director is just a watcher per Roman's
+   *     2026-04-29 note; contractor obviously can't accept their own work)
+   *
+   * For `verified` tickets we additionally enforce the 7-day window above —
+   * after that the entry only stays for admin via the edit modal flow.
+   */
+  const canStoreAct = (): boolean => {
+    if (!user || !ticket) return false
+    if (isAdmin) return true
+    if (profile?.role !== 'employee') return false
+    // Employee from the ticket's store. Falls back to "creator only" if the
+    // employee somehow has no store_id (legacy accounts).
+    const sameStore = profile.store_id && ticket.store_id === profile.store_id
+    const isCreator = ticket.created_by === user.id
+    if (!sameStore && !isCreator) return false
+    // 7-day cap on returning a verified ticket — non-admins only.
+    if (ticket.status === 'verified' && ticket.verified_at) {
+      const ageMs = Date.now() - new Date(ticket.verified_at).getTime()
+      if (ageMs > STORE_RETURN_WINDOW_DAYS * 86400 * 1000) return false
+    }
+    return true
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -814,15 +1032,39 @@ export default function TicketDetailPage() {
         </div>
       )}
 
-      {canManage && (ticket.status === 'completed' || ticket.status === 'partially_completed') && (
+      {/* Store-side actions on `completed` / `partially_completed`. The old
+          admin/director "Подтвердить / Отклонить" duo was retired on
+          2026-04-29: 'completed' is now a rare path (full-mode auto-verifies
+          once photo+act are present), so when it does happen the store
+          decides — accept as-is or send back. Director is a pure watcher per
+          the new flow, so they don't see these buttons anymore. */}
+      {canStoreAct() && (ticket.status === 'completed' || ticket.status === 'partially_completed') && (
         <div className="flex gap-2">
-          <Button onClick={() => updateStatus('verified')} className="flex-1">
+          <Button onClick={storeAccept} className="flex-1">
             <CheckCircle className="w-4 h-4" />
-            Подтвердить
+            Принять
           </Button>
-          <Button variant="danger" onClick={() => setShowRejectModal(true)}>
-            <XCircle className="w-4 h-4" />
-            Отклонить
+          <Button variant="secondary" onClick={() => { setReturnReason(''); setShowReturnModal(true) }} className="flex-1">
+            <RotateCcw className="w-4 h-4" />
+            Вернуть в работу
+          </Button>
+        </div>
+      )}
+
+      {/* Verified tickets: the store can still walk it back within the 7-day
+          window if they spot something post-acceptance. Admin retains the
+          option indefinitely (canStoreAct returns true for admin without
+          checking the window). After 7 days for a non-admin store user this
+          block silently disappears — they have to ask an admin. */}
+      {canStoreAct() && ticket.status === 'verified' && (
+        <div>
+          <Button
+            variant="secondary"
+            onClick={() => { setReturnReason(''); setShowReturnModal(true) }}
+            className="w-full"
+          >
+            <RotateCcw className="w-4 h-4" />
+            Вернуть в работу
           </Button>
         </div>
       )}
@@ -1516,6 +1758,84 @@ export default function TicketDetailPage() {
           <div className="flex gap-2 pt-1">
             <Button variant="secondary" onClick={() => setShowEditMetaModal(false)} className="flex-1">Отмена</Button>
             <Button onClick={saveMeta} loading={savingMeta} className="flex-1">Сохранить</Button>
+          </div>
+          {/* Admin-only: force-close. Hidden on already-closed tickets so we
+              don't show a no-op button. Reason field optional but encouraged. */}
+          {isAdmin && !['verified', 'rejected', 'merged'].includes(ticket.status) && (
+            <div className="pt-3 border-t border-border">
+              <button
+                type="button"
+                onClick={() => { setForceCloseReason(''); setShowForceCloseModal(true) }}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl text-caption text-amber-400 hover:bg-amber-400/5 border border-amber-400/30 transition-colors"
+              >
+                <Lock className="w-4 h-4" />
+                Закрыть заявку (без фото / акта)
+              </button>
+              <p className="text-micro text-text-tertiary mt-1.5 text-center">
+                Заявка перейдёт в «Подтверждена» в обход проверки. Используется когда работа выполнена, но снять фото невозможно.
+              </p>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* Return-to-work modal — store/admin sends a closed ticket back to
+          the assigned contractor. Reason ≥10 chars so the contractor has
+          enough context to act on it without a separate chat round-trip. */}
+      <Modal isOpen={showReturnModal} onClose={() => setShowReturnModal(false)} title="Вернуть в работу">
+        <div className="space-y-4">
+          <p className="text-body-sm text-text-secondary">
+            Исполнитель получит моментальный пуш и сразу увидит причину возврата.
+            Опишите, что не так — буквально 1-2 предложения.
+          </p>
+          <Textarea
+            label="Причина возврата"
+            placeholder="Например: фото не того угла; нет фото с расстояния; на акте не видно подписи"
+            value={returnReason}
+            onChange={e => setReturnReason(e.target.value)}
+            rows={4}
+          />
+          <p className={`text-caption ${returnReason.trim().length >= 10 ? 'text-text-tertiary' : 'text-amber-400'}`}>
+            Минимум 10 символов · сейчас {returnReason.trim().length}
+          </p>
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowReturnModal(false)} className="flex-1">Отмена</Button>
+            <Button
+              onClick={returnToWork}
+              loading={returning}
+              disabled={returnReason.trim().length < 10}
+              className="flex-1"
+            >
+              <RotateCcw className="w-4 h-4" />
+              Вернуть
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Force-close modal — admin only. Reason is optional (a single dot
+          is technically accepted), but the placeholder nudges admin to type
+          something so the audit trail is useful in 6 months. */}
+      <Modal isOpen={showForceCloseModal} onClose={() => setShowForceCloseModal(false)} title="Закрыть заявку без фото">
+        <div className="space-y-4">
+          <p className="text-body-sm text-text-secondary">
+            Заявка моментально перейдёт в статус «Подтверждена», даже если фото
+            и акта нет. Используйте только когда работа точно выполнена, но
+            доказательства собрать невозможно.
+          </p>
+          <Textarea
+            label="Комментарий (опционально)"
+            placeholder="Например: исполнитель отчитался устно, магазин подтвердил"
+            value={forceCloseReason}
+            onChange={e => setForceCloseReason(e.target.value)}
+            rows={3}
+          />
+          <div className="flex gap-2">
+            <Button variant="secondary" onClick={() => setShowForceCloseModal(false)} className="flex-1">Отмена</Button>
+            <Button onClick={forceClose} loading={forceClosing} className="flex-1">
+              <Lock className="w-4 h-4" />
+              Закрыть
+            </Button>
           </div>
         </div>
       </Modal>

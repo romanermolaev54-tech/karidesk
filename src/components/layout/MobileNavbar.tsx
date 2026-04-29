@@ -39,12 +39,16 @@ export function MobileNavbar({ userRole }: MobileNavbarProps) {
       { href: '/reports', label: 'Отчёты', icon: Briefcase },
       { href: '/settings', label: 'Ещё', icon: User },
     ],
+    // Director gets a "Новая" entry on 2026-04-29: they're a watcher in the
+    // verification flow now (no longer rubber-stamping closures), but
+    // they still need to be able to file tickets directly when something
+    // crosses their desk before reaching the store.
     director: [
       { href: '/dashboard', label: 'Главная', icon: LayoutDashboard },
       { href: '/tickets', label: 'Заявки', icon: ClipboardList },
+      { href: '/tickets/new', label: 'Новая', icon: TicketPlus },
       { href: '/approvals', label: 'Согласование', icon: Gavel },
-      { href: '/reports', label: 'Отчёты', icon: Briefcase },
-      { href: '/settings', label: 'Профиль', icon: User },
+      { href: '/settings', label: 'Ещё', icon: User },
     ],
   }
 

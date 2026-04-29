@@ -453,10 +453,10 @@ export default function TicketsPage() {
               </>
             )
           )}
-          {/* "Новая заявка" — only for employees. Admin's flow on this page is
-              managing tickets, not creating; admin/director have other entry
-              points (dashboard or direct URL). */}
-          {profile?.role === 'employee' && !selectMode && (
+          {/* "Новая заявка" — employees always, directors as of 2026-04-29
+              (they pre-file work that lands on their desk). Admins still use
+              other entry points; this page is their management workspace. */}
+          {(profile?.role === 'employee' || profile?.role === 'director') && !selectMode && (
             <Link href="/tickets/new">
               <Button>
                 <TicketPlus className="w-4 h-4" />

@@ -38,7 +38,9 @@ interface SidebarProps {
 
 const navItems = [
   { href: '/dashboard', label: 'Главная', icon: LayoutDashboard, roles: ['admin', 'director', 'employee', 'contractor'] },
-  { href: '/tickets/new', label: 'Новая заявка', icon: TicketPlus, roles: ['employee'] },
+  // Director also creates tickets now (2026-04-29) — they pre-file work that
+  // crosses their desk before it ever reaches a magazine.
+  { href: '/tickets/new', label: 'Новая заявка', icon: TicketPlus, roles: ['employee', 'director'] },
   { href: '/tickets', label: 'Все заявки', icon: ClipboardList, roles: ['admin', 'director'] },
   { href: '/approvals', label: 'На согласовании', icon: Gavel, roles: ['admin', 'director'] },
   { href: '/my-tickets', label: 'Мои заявки', icon: ClipboardList, roles: ['employee'] },
