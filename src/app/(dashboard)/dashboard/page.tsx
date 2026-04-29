@@ -9,6 +9,8 @@ import { formatTicketNumber } from '@/lib/utils'
 import { TICKET_STATUSES } from '@/lib/constants'
 import Link from 'next/link'
 import type { Ticket } from '@/types/database'
+import { AssigneeBadge } from '@/components/tickets/AssigneeBadge'
+import { paletteForProfile } from '@/lib/avatar'
 import {
   TicketPlus,
   ClipboardList,
@@ -48,7 +50,7 @@ export default function DashboardPage() {
     // filter still helps PostgREST pick the right index.
     let recent = supabase
       .from('tickets')
-      .select('*, store:stores(id, store_number, name), category:ticket_categories(id, name, color)')
+      .select('*, store:stores(id, store_number, name), category:ticket_categories(id, name, color), assignee:profiles!tickets_assigned_to_fkey(id, full_name, avatar_color)')
       .order('created_at', { ascending: false })
       .limit(5)
     let cNew         = supabase.from('tickets').select('id', { count: 'exact', head: true }).eq('status', 'new')
@@ -296,12 +298,21 @@ export default function DashboardPage() {
           <div className="space-y-2">
             {recentTickets.map(ticket => {
               const statusInfo = TICKET_STATUSES[ticket.status]
+              // Tinted left strip + letter-circle for tickets that already
+              // have an assignee. Same colour rule as /tickets — every list
+              // shows the same colour for the same contractor.
+              const assigneePalette = ticket.assignee ? paletteForProfile(ticket.assignee) : null
+              const stripStyle = assigneePalette
+                ? { borderLeftColor: assigneePalette.ring, borderLeftWidth: 4, borderLeftStyle: 'solid' as const }
+                : undefined
               return (
                 <Link
                   key={ticket.id}
                   href={`/tickets/${ticket.id}`}
+                  style={stripStyle}
                   className="flex items-center gap-3 p-3 rounded-xl hover:bg-surface-elevated/20 transition-colors"
                 >
+                  <AssigneeBadge assignee={ticket.assignee} size="sm" />
                   <span className="text-body-sm font-semibold text-accent/80 w-14 flex-shrink-0">
                     {formatTicketNumber(ticket.ticket_number)}
                   </span>

@@ -12,6 +12,9 @@ interface Body {
   is_active?: boolean
   password?: string
   release?: boolean
+  // Letter-badge colour override. Either a palette index '0'..'7' or a
+  // '#RRGGBB' hex. NULL clears the override (auto-derive from id).
+  avatar_color?: string | null
 }
 
 async function ensureAdmin(): Promise<{ ok: true } | { ok: false; status: number; error: string }> {
@@ -78,6 +81,18 @@ export async function PATCH(req: NextRequest, ctx: { params: { id: string } }) {
   if ('division_id' in body) updates.division_id = body.division_id ?? null
   if ('store_id' in body) updates.store_id = body.store_id ?? null
   if (typeof body.is_active === 'boolean') updates.is_active = body.is_active
+  if ('avatar_color' in body) {
+    // Accept palette index '0'..'7', '#RGB'/'#RRGGBB' hex, or null. Anything
+    // else gets coerced to null so a malformed colour can never persist.
+    const v = body.avatar_color
+    if (v === null || v === '') {
+      updates.avatar_color = null
+    } else if (typeof v === 'string' && (/^[0-7]$/.test(v) || /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(v))) {
+      updates.avatar_color = v
+    } else {
+      updates.avatar_color = null
+    }
+  }
 
   if (Object.keys(updates).length > 1) {
     const { error } = await admin.from('profiles').update(updates).eq('id', targetId)

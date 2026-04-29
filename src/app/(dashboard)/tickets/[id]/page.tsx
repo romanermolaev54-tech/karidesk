@@ -38,6 +38,8 @@ import {
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 import { compressImage } from '@/lib/image'
+import { AssigneeBadge } from '@/components/tickets/AssigneeBadge'
+import { Trash2 } from 'lucide-react'
 
 export default function TicketDetailPage() {
   const params = useParams()
@@ -603,6 +605,62 @@ export default function TicketDetailPage() {
     setUploading(false)
   }
 
+  /**
+   * Delete a ticket photo (and its underlying storage blob).
+   *
+   * The DB layer (RLS policy added in migration 20260429120000) is the source
+   * of truth for permission — an admin can delete anything, a contractor can
+   * only delete their own uploads on tickets assigned to them, employees and
+   * directors can't delete at all. The UI below mirrors this so we don't show
+   * a button that will then 403, but the policy is the real enforcement.
+   *
+   * Order matters: storage first, then row. If the row delete fails after the
+   * storage delete succeeded we'd be left with a dangling DB row pointing at
+   * a missing blob, which is recoverable. The other order would leave an
+   * orphan blob with no DB pointer — much harder to find and clean up.
+   */
+  const handleDeletePhoto = async (photo: TicketPhoto) => {
+    if (!user) return
+    if (!confirm('Удалить это фото? Это действие нельзя отменить.')) return
+    // Optimistic: remove from local state first so the UI feels snappy. We
+    // restore on failure below.
+    const prev = photos
+    setPhotos(prev.filter(p => p.id !== photo.id))
+    if (photoPreview === photo.file_url) setPhotoPreview(null)
+
+    const { error: stErr } = await supabase.storage.from('ticket-photos').remove([photo.storage_path])
+    if (stErr) {
+      // Rare but possible if the blob is already gone — proceed to delete the
+      // row anyway so we don't strand it. Log for debugging but don't bail.
+      console.warn('Storage delete failed (continuing):', stErr.message)
+    }
+    const { error: rowErr } = await supabase.from('ticket_photos').delete().eq('id', photo.id)
+    if (rowErr) {
+      // RLS rejection (e.g. somebody tampered with the client) — restore.
+      setPhotos(prev)
+      toast.error('Не удалось удалить: ' + rowErr.message)
+      return
+    }
+    toast.success('Фото удалено')
+  }
+
+  /**
+   * Can the current user delete *this specific* photo? Mirrors the RLS rule
+   * exactly so the trash button only renders when the action will actually
+   * succeed. The DB still has the final say if the rules diverge.
+   */
+  const canDeletePhoto = (photo: TicketPhoto): boolean => {
+    if (!user || !ticket) return false
+    if (isAdmin) return true
+    // Contractor: their own upload, on a ticket assigned to them.
+    if (profile?.role === 'contractor'
+        && photo.uploaded_by === user.id
+        && ticket.assigned_to === user.id) {
+      return true
+    }
+    return false
+  }
+
   if (loading) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -640,6 +698,10 @@ export default function TicketDetailPage() {
         </button>
         <div className="flex-1">
           <div className="flex items-center gap-2 flex-wrap">
+            {/* Coloured initial circle for the assigned contractor — same
+                colour follows them across all lists. Render only when assigned;
+                unassigned tickets keep the row visually clean. */}
+            <AssigneeBadge assignee={ticket.assignee} size="md" />
             <h1 className="text-heading-2 text-text-primary">
               {formatTicketNumber(ticket.ticket_number)}
             </h1>
@@ -1047,19 +1109,43 @@ export default function TicketDetailPage() {
               <div key={type}>
                 <h3 className="text-body-sm font-medium text-text-secondary mb-2">{typeLabels[type]}</h3>
                 <div className="grid grid-cols-3 gap-2">
-                  {typePhotos.map(photo => (
-                    <button
-                      key={photo.id}
-                      onClick={() => setPhotoPreview(photo.file_url)}
-                      className="aspect-square rounded-xl overflow-hidden border border-border hover:border-accent/40 transition-colors"
-                    >
-                      <img
-                        src={photo.file_url || ''}
-                        alt=""
-                        className="w-full h-full object-cover"
-                      />
-                    </button>
-                  ))}
+                  {typePhotos.map(photo => {
+                    // Show a small trash chip in the top-right corner only
+                    // when the current user can actually delete this photo
+                    // (admin: any; contractor: own uploads on assigned ticket).
+                    // Wrapped in a non-button div so the inner trash button
+                    // doesn't nest inside another button (HTML invalid).
+                    const showDelete = canDeletePhoto(photo)
+                    return (
+                      <div
+                        key={photo.id}
+                        className="relative aspect-square rounded-xl overflow-hidden border border-border hover:border-accent/40 transition-colors group"
+                      >
+                        <button
+                          type="button"
+                          onClick={() => setPhotoPreview(photo.file_url)}
+                          className="w-full h-full"
+                        >
+                          <img
+                            src={photo.file_url || ''}
+                            alt=""
+                            className="w-full h-full object-cover"
+                          />
+                        </button>
+                        {showDelete && (
+                          <button
+                            type="button"
+                            onClick={(e) => { e.stopPropagation(); handleDeletePhoto(photo) }}
+                            className="absolute top-1.5 right-1.5 p-1.5 rounded-lg bg-black/60 backdrop-blur-sm text-white/90 hover:bg-red-500/90 hover:text-white transition-colors"
+                            title="Удалить фото"
+                            aria-label="Удалить фото"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    )
+                  })}
                   {typePhotos.length === 0 && (
                     <div className="aspect-square rounded-xl border-2 border-dashed border-border flex items-center justify-center">
                       <Camera className="w-6 h-6 text-text-tertiary opacity-40" />

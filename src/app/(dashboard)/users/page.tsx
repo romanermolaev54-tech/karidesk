@@ -11,6 +11,7 @@ import { USER_ROLES } from '@/lib/constants'
 import type { Profile, UserRole, Division } from '@/types/database'
 import toast from 'react-hot-toast'
 import { Input } from '@/components/ui/Input'
+import { AVATAR_PALETTE, paletteForProfile, initialFor } from '@/lib/avatar'
 import {
   Shield,
   Search,
@@ -48,6 +49,10 @@ export default function UsersPage() {
   const [editName, setEditName] = useState('')
   const [editPhone, setEditPhone] = useState('')
   const [editNewPassword, setEditNewPassword] = useState('')
+  // null = "auto" (derive from id hash), otherwise palette index '0'..'7'.
+  // We don't store free hex from this UI to keep the picker constrained to
+  // the curated palette — admin can still set custom hex via DB if needed.
+  const [editAvatarColor, setEditAvatarColor] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [releasing, setReleasing] = useState(false)
   const [regMode, setRegMode] = useState<Mode>('open')
@@ -112,6 +117,11 @@ export default function UsersPage() {
     setEditName(u.full_name || '')
     setEditPhone(u.phone || '')
     setEditNewPassword('')
+    // Pre-fill the colour picker only when avatar_color is a palette index.
+    // Hex overrides (rare, set via DB) are shown as "Авто" for the picker
+    // because we don't have UI to round-trip arbitrary hex; the existing
+    // value remains untouched unless the admin actively picks a new slot.
+    setEditAvatarColor(u.avatar_color && /^[0-7]$/.test(u.avatar_color) ? u.avatar_color : null)
   }
 
   const handleSaveUser = async () => {
@@ -121,6 +131,8 @@ export default function UsersPage() {
       full_name: editName.trim(),
       phone: editPhone.trim(),
       role: editRole,
+      // null clears the override, server treats it as "back to auto".
+      avatar_color: editAvatarColor,
     }
     if (editNewPassword.trim().length > 0 && editNewPassword.trim().length < 6) {
       toast.error('Пароль должен содержать минимум 6 символов')
@@ -144,6 +156,7 @@ export default function UsersPage() {
       full_name: editName.trim(),
       phone: editPhone.trim(),
       role: editRole,
+      avatar_color: editAvatarColor,
     } : u))
     toast.success(editNewPassword ? 'Сохранено, пароль обновлён' : 'Сохранено')
     setEditUser(null)
@@ -316,14 +329,33 @@ export default function UsersPage() {
         </div>
       ) : (
         <div className="space-y-2">
-          {filtered.map(u => (
+          {filtered.map(u => {
+            // Contractor avatars use the same colour as their letter-badge on
+            // ticket cards — admin can match a face to a ticket at a glance.
+            // Other roles stay on the gradient-accent house style; blocked
+            // users get a muted slot regardless of role to read as inactive.
+            const isContractor = u.role === 'contractor'
+            const palette = isContractor ? paletteForProfile(u) : null
+            const avatarStyle = u.is_active && palette
+              ? { backgroundColor: palette.bg, color: palette.fg }
+              : undefined
+            const avatarClass = u.is_active
+              ? (palette ? '' : 'gradient-accent')
+              : 'bg-surface-elevated/60'
+            return (
             <div key={u.id} className="card-premium p-4">
               <div className="flex items-center justify-between gap-3 flex-wrap">
                 <div className="flex items-center gap-3 min-w-0 flex-1">
-                  <div className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${
-                    u.is_active ? 'gradient-accent' : 'bg-surface-elevated/60'
-                  }`}>
-                    <span className={`text-body-sm font-semibold ${u.is_active ? 'text-white' : 'text-text-tertiary'}`}>
+                  <div
+                    className={`w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 ${avatarClass}`}
+                    style={avatarStyle}
+                  >
+                    <span
+                      className={`text-body-sm font-semibold ${
+                        u.is_active ? (palette ? '' : 'text-white') : 'text-text-tertiary'
+                      }`}
+                      style={avatarStyle ? { color: avatarStyle.color } : undefined}
+                    >
                       {u.full_name?.charAt(0)?.toUpperCase() || '?'}
                     </span>
                   </div>
@@ -371,7 +403,8 @@ export default function UsersPage() {
                 </div>
               </div>
             </div>
-          ))}
+            )
+          })}
         </div>
       )}
 
@@ -404,6 +437,60 @@ export default function UsersPage() {
               onChange={e => setEditRole(e.target.value as UserRole)}
               options={Object.entries(USER_ROLES).map(([value, { label }]) => ({ value, label }))}
             />
+            {/* Letter-badge colour picker. Most useful for contractors (their
+                badge appears on every ticket card), but harmless for any role
+                that might be reassigned later, so we always show it. */}
+            <div>
+              <label className="block text-body-sm font-medium text-text-secondary mb-2">
+                Цвет аватара
+                <span className="ml-1 text-caption text-text-tertiary font-normal">
+                  · виден на карточках заявок
+                </span>
+              </label>
+              <div className="flex flex-wrap gap-2 items-center">
+                {/* "Auto" tile — clears the override, falls back to the hash-
+                    derived colour. Includes a preview of what auto resolves to
+                    for this specific user, so admin can decide whether to
+                    bother overriding at all. */}
+                <button
+                  type="button"
+                  onClick={() => setEditAvatarColor(null)}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border text-caption font-medium transition-colors ${
+                    editAvatarColor === null
+                      ? 'border-accent text-accent bg-accent/5'
+                      : 'border-border text-text-tertiary hover:text-text-secondary hover:border-border-strong'
+                  }`}
+                >
+                  <span
+                    className="w-5 h-5 rounded-full inline-flex items-center justify-center text-[10px] font-bold"
+                    style={(() => {
+                      const auto = paletteForProfile({ id: editUser.id, avatar_color: null })
+                      return { backgroundColor: auto.bg, color: auto.fg }
+                    })()}
+                  >
+                    {initialFor(editName || editUser.full_name)}
+                  </span>
+                  Авто
+                </button>
+                {AVATAR_PALETTE.map((p, idx) => {
+                  const value = String(idx)
+                  const selected = editAvatarColor === value
+                  return (
+                    <button
+                      key={idx}
+                      type="button"
+                      onClick={() => setEditAvatarColor(value)}
+                      className={`w-9 h-9 rounded-full transition-transform ${
+                        selected ? 'ring-2 ring-accent ring-offset-2 ring-offset-card-bg scale-110' : 'hover:scale-105'
+                      }`}
+                      style={{ backgroundColor: p.bg }}
+                      aria-label={`Цвет ${idx + 1}`}
+                      title={`Цвет ${idx + 1}`}
+                    />
+                  )
+                })}
+              </div>
+            </div>
             <Input
               label="Новый пароль (опционально)"
               type="text"

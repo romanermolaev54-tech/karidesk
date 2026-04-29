@@ -15,6 +15,10 @@ export interface Profile {
   division_id: string | null
   store_id: string | null
   avatar_url: string | null
+  // Optional manual override for the contractor letter-badge colour. NULL =
+  // auto-derived from id hash on the client. Admin can pin a colour from the
+  // /users edit modal so a specific contractor always shows in (e.g.) blue.
+  avatar_color: string | null
   is_active: boolean
   push_subscription: Record<string, unknown> | null
   notification_preferences: {

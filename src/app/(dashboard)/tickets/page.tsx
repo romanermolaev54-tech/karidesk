@@ -29,6 +29,8 @@ import {
 import { Modal } from '@/components/ui/Modal'
 import toast from 'react-hot-toast'
 import type { Profile } from '@/types/database'
+import { AssigneeBadge } from '@/components/tickets/AssigneeBadge'
+import { paletteForProfile } from '@/lib/avatar'
 
 export default function TicketsPage() {
   const { profile, isAdmin, isDirector } = useAuth()
@@ -142,7 +144,7 @@ export default function TicketsPage() {
         category:ticket_categories(id, name, icon, color),
         division:divisions(id, name),
         creator:profiles!tickets_created_by_fkey(id, full_name),
-        assignee:profiles!tickets_assigned_to_fkey(id, full_name)
+        assignee:profiles!tickets_assigned_to_fkey(id, full_name, avatar_color)
       `)
       .order('created_at', { ascending: false })
       .limit(200) // Bumped from 50 — with proper filters in place, admin
@@ -627,17 +629,26 @@ export default function TicketsPage() {
             const statusInfo = TICKET_STATUSES[ticket.status]
             const priorityInfo = TICKET_PRIORITIES[ticket.priority]
             const isSelected = selectedIds.has(ticket.id)
+            // Assigned tickets get a coloured left strip + matching letter
+            // badge — same colour follows the contractor across every list.
+            // Unassigned tickets are intentionally left blank (no strip, no
+            // placeholder badge) so they read as "needs action" by contrast.
+            const assigneePalette = ticket.assignee ? paletteForProfile(ticket.assignee) : null
+            const stripStyle = assigneePalette
+              ? { borderLeftColor: assigneePalette.ring, borderLeftWidth: 4, borderLeftStyle: 'solid' as const }
+              : undefined
             const Wrapper = selectMode
               ? ({ children }: { children: React.ReactNode }) => (
                   <button
                     onClick={() => toggleSelect(ticket.id)}
+                    style={stripStyle}
                     className={`w-full text-left block card-interactive p-4 transition-all ${isSelected ? 'border-accent ring-2 ring-accent/15' : ''}`}
                   >
                     {children}
                   </button>
                 )
               : ({ children }: { children: React.ReactNode }) => (
-                  <Link href={`/tickets/${ticket.id}`} className="block card-interactive p-4 transition-all">
+                  <Link href={`/tickets/${ticket.id}`} style={stripStyle} className="block card-interactive p-4 transition-all">
                     {children}
                   </Link>
                 )
@@ -655,6 +666,10 @@ export default function TicketsPage() {
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
+                      {/* Letter-circle of the assigned contractor — colour
+                          matches the left border strip. Hidden for unassigned
+                          tickets (caller renders no slot at all). */}
+                      <AssigneeBadge assignee={ticket.assignee} size="sm" />
                       <span className="text-body-sm font-semibold text-accent/80">
                         {formatTicketNumber(ticket.ticket_number)}
                       </span>
