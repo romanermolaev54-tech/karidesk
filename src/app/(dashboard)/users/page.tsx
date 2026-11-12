@@ -24,6 +24,8 @@ import {
   ToggleRight,
   Users,
   UserX,
+  Link2,
+  Copy,
 } from 'lucide-react'
 
 type Mode = 'open' | 'moderation'
@@ -55,6 +57,8 @@ export default function UsersPage() {
   const [editAvatarColor, setEditAvatarColor] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [releasing, setReleasing] = useState(false)
+  const [generatingLink, setGeneratingLink] = useState(false)
+  const [resetLink, setResetLink] = useState<{ url: string; expiresAt: string; email: string | null } | null>(null)
   const [regMode, setRegMode] = useState<Mode>('open')
   const [regModeSaving, setRegModeSaving] = useState(false)
 
@@ -117,6 +121,7 @@ export default function UsersPage() {
     setEditName(u.full_name || '')
     setEditPhone(u.phone || '')
     setEditNewPassword('')
+    setResetLink(null)
     // Pre-fill the colour picker only when avatar_color is a palette index.
     // Hex overrides (rare, set via DB) are shown as "Авто" for the picker
     // because we don't have UI to round-trip arbitrary hex; the existing
@@ -160,6 +165,34 @@ export default function UsersPage() {
     } : u))
     toast.success(editNewPassword ? 'Сохранено, пароль обновлён' : 'Сохранено')
     setEditUser(null)
+  }
+
+  const handleGenerateResetLink = async () => {
+    if (!editUser) return
+    setGeneratingLink(true)
+    try {
+      const res = await fetch(`/api/users/${editUser.id}/reset-link`, { method: 'POST' })
+      const j = await res.json()
+      if (!res.ok) {
+        toast.error('Не удалось создать ссылку: ' + (j.error || res.status))
+        return
+      }
+      setResetLink({ url: j.url, expiresAt: j.expires_at, email: j.email ?? null })
+    } catch (e) {
+      toast.error('Ошибка сети: ' + (e as Error).message)
+    } finally {
+      setGeneratingLink(false)
+    }
+  }
+
+  const handleCopyResetLink = async () => {
+    if (!resetLink) return
+    try {
+      await navigator.clipboard.writeText(resetLink.url)
+      toast.success('Ссылка скопирована')
+    } catch {
+      toast.error('Не удалось скопировать. Выдели вручную.')
+    }
   }
 
   const handleRelease = async () => {
@@ -499,6 +532,57 @@ export default function UsersPage() {
               placeholder="Оставь пустым, чтобы не менять"
               helperText="Минимум 6 символов. После смены сообщи пароль пользователю."
             />
+
+            <div className="rounded-xl border border-border p-3 space-y-2 bg-surface-elevated/20">
+              <div className="flex items-start gap-2">
+                <Link2 className="w-4 h-4 text-accent mt-0.5 shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-body-sm text-text-primary font-medium">Ссылка для сброса пароля</p>
+                  <p className="text-caption text-text-tertiary">
+                    Одноразовая, действует 24 часа. Отдай пользователю — он сам поставит удобный пароль.
+                  </p>
+                </div>
+              </div>
+              {!resetLink ? (
+                <Button
+                  variant="secondary"
+                  onClick={handleGenerateResetLink}
+                  loading={generatingLink}
+                  className="w-full"
+                >
+                  Сгенерировать ссылку
+                </Button>
+              ) : (
+                <div className="space-y-2">
+                  <div className="rounded-lg bg-surface-muted/40 border border-border p-2 break-all font-mono text-caption text-text-primary select-all">
+                    {resetLink.url}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button variant="secondary" onClick={handleCopyResetLink} className="flex-1">
+                      <Copy className="w-4 h-4" />
+                      Копировать
+                    </Button>
+                    <Button
+                      variant="secondary"
+                      onClick={handleGenerateResetLink}
+                      loading={generatingLink}
+                      className="flex-1"
+                    >
+                      Новая
+                    </Button>
+                  </div>
+                  <p className="text-micro text-text-tertiary">
+                    Действует до{' '}
+                    {new Date(resetLink.expiresAt).toLocaleString('ru-RU', {
+                      day: '2-digit', month: '2-digit', year: 'numeric',
+                      hour: '2-digit', minute: '2-digit',
+                    })}
+                    . При «Новая» предыдущая ссылка перестаёт работать.
+                  </p>
+                </div>
+              )}
+            </div>
+
             <div className="flex gap-2">
               <Button variant="secondary" onClick={() => setEditUser(null)} className="flex-1">Отмена</Button>
               <Button onClick={handleSaveUser} loading={saving} className="flex-1">
