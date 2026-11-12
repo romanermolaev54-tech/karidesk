@@ -13,8 +13,11 @@ export async function middleware(request: NextRequest) {
   // If user already has a session cookie and visits /login or /register,
   // bounce them to /dashboard. (Failure mode here is harmless — they'll
   // just see the auth form, which is fine.)
+  // ?relogin=1 is set by the dashboard layout when the client has no session.
+  // Without this escape hatch a stale cookie bounced the user straight back to
+  // /dashboard, where they sat on an empty shell with nothing loading.
   const isAuthPage = path === '/login' || path === '/register'
-  if (isAuthPage) {
+  if (isAuthPage && !request.nextUrl.searchParams.has('relogin')) {
     const cookies = request.cookies.getAll()
     const hasSession = cookies.some(c => c.name.startsWith('sb-') && c.name.endsWith('-auth-token'))
     if (hasSession) {

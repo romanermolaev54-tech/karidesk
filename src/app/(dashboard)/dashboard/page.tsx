@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useAuth } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 import { Button } from '@/components/ui/Button'
@@ -30,6 +30,8 @@ export default function DashboardPage() {
   const [recentTickets, setRecentTickets] = useState<Ticket[]>([])
   const [counts, setCounts] = useState({ new: 0, in_progress: 0, completed: 0, emergency: 0, total_active: 0 })
   const [loading, setLoading] = useState(true)
+  const [loadError, setLoadError] = useState(false)
+  const loadSeq = useRef(0)
 
   useEffect(() => {
     if (!user) return
@@ -89,19 +91,32 @@ export default function DashboardPage() {
       cTotalActive = cTotalActive.eq('division_id', profile.division_id)
     }
 
-    const [recentRes, newRes, inProgRes, doneRes, emRes, totalRes] = await Promise.all([
-      recent, cNew, cInProg, cDone, cEmergency, cTotalActive,
-    ])
+    const requestId = ++loadSeq.current
+    setLoadError(false)
+    try {
+      const results = await Promise.all([
+        recent, cNew, cInProg, cDone, cEmergency, cTotalActive,
+      ])
+      // A newer load (role arrived, retry pressed) supersedes this one.
+      if (requestId !== loadSeq.current) return
+      const [recentRes, newRes, inProgRes, doneRes, emRes, totalRes] = results
 
-    setRecentTickets(recentRes.data || [])
-    setCounts({
-      new: newRes.count || 0,
-      in_progress: inProgRes.count || 0,
-      completed: doneRes.count || 0,
-      emergency: emRes.count || 0,
-      total_active: totalRes.count || 0,
-    })
-    setLoading(false)
+      if (results.some(r => r.error)) {
+        setLoadError(true)
+        return
+      }
+      setRecentTickets(recentRes.data || [])
+      setCounts({
+        new: newRes.count || 0,
+        in_progress: inProgRes.count || 0,
+        completed: doneRes.count || 0,
+        emergency: emRes.count || 0,
+        total_active: totalRes.count || 0,
+      })
+      setLoading(false)
+    } catch {
+      if (requestId === loadSeq.current) setLoadError(true)
+    }
   }
 
   const baseList = role === 'employee' ? '/my-tickets' : role === 'contractor' ? '/work' : '/tickets'
@@ -173,6 +188,17 @@ export default function DashboardPage() {
           </Link>
         )}
       </div>
+
+      {loadError && (
+        <div className="card-premium p-4 flex items-center justify-between gap-3">
+          <p className="text-body-sm text-text-secondary">
+            Не удалось загрузить данные.
+          </p>
+          <Button variant="secondary" size="sm" onClick={() => loadData()}>
+            Повторить
+          </Button>
+        </div>
+      )}
 
       {/* Stats */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 lg:gap-4">

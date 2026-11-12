@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useEffect } from 'react'
-import { useAuth } from '@/hooks/useAuth'
+import { useAuth, patchProfile } from '@/hooks/useAuth'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/Button'
@@ -199,21 +199,9 @@ export default function SettingsPage() {
       toast.error('Не удалось сохранить: ' + error.message)
       return
     }
-    // Patch the useAuth localStorage cache so subsequent navigations don't
-    // overwrite our just-saved form with a 24-hour-old cached version.
-    try {
-      const raw = localStorage.getItem('karidesk_profile_v1')
-      if (raw) {
-        const cached = JSON.parse(raw) as { ts: number; userId: string; profile: Record<string, unknown> }
-        if (cached.userId === user.id && cached.profile) {
-          cached.profile.full_name = trimmedName
-          cached.profile.phone = trimmedPhone
-          cached.ts = Date.now()
-          localStorage.setItem('karidesk_profile_v1', JSON.stringify(cached))
-          sessionStorage.setItem('karidesk_profile_v1', JSON.stringify(cached))
-        }
-      }
-    } catch { /* cache patch is best-effort */ }
+    // Update the shared auth state (and its cache) so the sidebar and this
+    // form show the saved values straight away.
+    patchProfile(user.id, { full_name: trimmedName, phone: trimmedPhone })
     setSaved(true)
     setTimeout(() => setSaved(false), 2000)
     toast.success('Сохранено')

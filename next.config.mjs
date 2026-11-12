@@ -1,4 +1,10 @@
-const BUILD_ID = String(Date.now())
+// next.config is evaluated separately in the main build process and in every
+// compile worker. A bare Date.now() here gave the client bundle, the server
+// bundle and .next/BUILD_ID three different values, so SwUpdater saw a "new
+// version" on every fresh session and reloaded the page mid-startup. Workers
+// inherit process.env, so pin the value there on the first evaluation.
+if (!process.env.KARIDESK_BUILD_ID) process.env.KARIDESK_BUILD_ID = String(Date.now())
+const BUILD_ID = process.env.KARIDESK_BUILD_ID
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {

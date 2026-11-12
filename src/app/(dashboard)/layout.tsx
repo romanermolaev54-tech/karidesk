@@ -11,7 +11,7 @@ import { useRouter } from 'next/navigation'
 import { X } from 'lucide-react'
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
-  const { user, profile, role, loading } = useAuth()
+  const { user, profile, role, loading, stalled } = useAuth()
   const router = useRouter()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const { unreadCount } = useNotifications({ userId: user?.id || null })
@@ -21,25 +21,39 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   // middleware fires after login, which kicks the user back to /login.
   useEffect(() => {
     if (!loading && !user) {
-      router.replace('/login')
+      // relogin=1 stops middleware from bouncing us back here on a stale cookie.
+      router.replace('/login?relogin=1')
     }
   }, [loading, user, router])
 
-  if (loading) {
+  // Without a user there is nothing to show: rendering the shell here left
+  // people staring at "Привет!" and empty tiles while the redirect was pending.
+  if (loading || !user) {
     return (
       <div className="min-h-screen bg-surface flex items-center justify-center p-4">
         <div className="flex flex-col items-center gap-4 max-w-xs w-full">
           <div className="w-10 h-10 border-2 border-accent/30 border-t-accent rounded-full animate-spin" />
           <p className="text-body-sm text-text-secondary">Загрузка…</p>
-          <p className="text-caption text-text-tertiary text-center">
-            Если зависло на этом экране дольше 10 секунд —
-          </p>
-          <a
-            href="/reset"
-            className="text-caption font-semibold text-accent hover:underline"
-          >
-            Сбросить сессию и войти заново →
-          </a>
+          {stalled && (
+            <>
+              <p className="text-caption text-text-tertiary text-center">
+                Похоже, слабая связь. Вход сохранён — попробуйте ещё раз.
+              </p>
+              <button
+                type="button"
+                onClick={() => window.location.reload()}
+                className="gradient-accent text-white rounded-xl px-5 py-2.5 text-body-sm font-semibold"
+              >
+                Повторить
+              </button>
+              <a
+                href="/reset"
+                className="text-caption text-text-tertiary hover:underline"
+              >
+                Не помогает — сбросить сессию и войти заново
+              </a>
+            </>
+          )}
         </div>
       </div>
     )

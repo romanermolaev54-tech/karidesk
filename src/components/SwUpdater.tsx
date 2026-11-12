@@ -34,8 +34,16 @@ export function SwUpdater() {
       } catch { /* noop */ }
     }
 
+    // HTML is served no-store, so a page that has just loaded always runs the
+    // current bundle. A mismatch seen right after load can only be a build-id
+    // bug, never a real deploy — reloading there doubles every app start and
+    // aborts the token refresh in flight. Only reload a page that has lived a while.
+    const loadedAt = Date.now()
+    const MIN_PAGE_AGE_MS = 30 * 1000
+
     const checkVersion = async () => {
       if (!CLIENT_BUILD_ID) return
+      if (Date.now() - loadedAt < MIN_PAGE_AGE_MS) return
       try {
         const r = await fetch('/api/version', { cache: 'no-store' })
         if (!r.ok) return
@@ -57,7 +65,7 @@ export function SwUpdater() {
     // Always trigger a SW script-refresh check too, so the SW can update even
     // when the JS build hasn't changed.
     refreshSwScript()
-    checkVersion()
+    const firstCheck = setTimeout(checkVersion, MIN_PAGE_AGE_MS + 1000)
 
     const intervalId = setInterval(checkVersion, CHECK_INTERVAL_MS)
     const onFocus = () => { checkVersion() }
@@ -67,6 +75,7 @@ export function SwUpdater() {
 
     return () => {
       cancelled = true
+      clearTimeout(firstCheck)
       clearInterval(intervalId)
       window.removeEventListener('focus', onFocus)
       document.removeEventListener('visibilitychange', onVis)
